@@ -19,6 +19,35 @@ import '../../shared/widgets/summary_card.dart';
 
 // â”€â”€ Monthly summary provider â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+final savingsTargetProvider = StateNotifierProvider<SavingsTargetNotifier, double>((ref) {
+  return SavingsTargetNotifier();
+});
+
+class SavingsTargetNotifier extends StateNotifier<double> {
+  static const _key = 'monthly_savings_target';
+
+  SavingsTargetNotifier() : super(5000.0) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      state = prefs.getDouble(_key) ?? 5000.0;
+    } catch (_) {}
+  }
+
+  Future<void> setTarget(double value) async {
+    state = value;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble(_key, value);
+    } catch (_) {}
+  }
+}
+
+final dismissedSmsTxIdsProvider = StateProvider<Set<String>>((ref) => {});
+
 final monthlySummaryProvider =
     FutureProvider.autoDispose<MonthlySummary>((ref) async {
   final userId = ref.watch(currentUserIdProvider);
@@ -200,8 +229,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   void _startSmsListener() {
     ref.read(smsListenerProvider).start();
-  }
-
   Future<void> _onSmsGranted() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_prefKey, true);
@@ -238,6 +265,20 @@ class _DashboardContent extends ConsumerWidget {
     final trendDataAsync = ref.watch(trendDataProvider);
     final selectedMonth = ref.watch(selectedMonthProvider);
     final userAsync = ref.watch(userProfileProvider);
+    final txsAsync = ref.watch(transactionsStreamProvider);
+    final dismissedIds = ref.watch(dismissedSmsTxIdsProvider);
+
+    // Find any pending SMS transaction with category 'Other' that hasn't been dismissed
+    Transaction? pendingSmsTx;
+    final txsList = txsAsync.value ?? [];
+    for (final tx in txsList) {
+      if (tx.category == 'Other' &&
+          tx.source == TransactionSource.sms &&
+          !dismissedIds.contains(tx.id)) {
+        pendingSmsTx = tx;
+        break;
+      }
+    }
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -261,8 +302,8 @@ class _DashboardContent extends ConsumerWidget {
                       gradient: AppColors.primaryGradient,
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(Icons.account_balance_wallet_rounded,
-                        color: Colors.white, size: 18),
+                    child: const Icon(Icons.android_rounded,
+                        color: Colors.white, size: 20),
                   ),
                   const SizedBox(width: 10),
                   Text('YourCA', style: AppTextStyles.headlineMedium),
@@ -307,7 +348,13 @@ class _DashboardContent extends ConsumerWidget {
                 _MonthRow(selectedMonth: selectedMonth, ref: ref),
                 const SizedBox(height: 16),
 
-                // Summary cards
+                // Quick Categorization Card (if any pending SMS transaction needs category selection)
+                if (pendingSmsTx != null) ...[
+                  _QuickCategorizationCard(tx: pendingSmsTx!),
+                  const SizedBox(height: 16),
+                ],
+
+                // Summary cards / Smart Savings Hub
                 summaryAsync.when(
                   data: (s) => _SummarySection(summary: s),
                   loading: () => const Center(
@@ -343,7 +390,7 @@ class _DashboardContent extends ConsumerWidget {
   }
 }
 
-// â”€â”€ Month row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Month row ─────────────────────────────────────────────────────────────
 
 class _MonthRow extends StatelessWidget {
   final DateTime selectedMonth;
@@ -391,42 +438,184 @@ class _MonthRow extends StatelessWidget {
   }
 }
 
-// â”€â”€ Summary section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Smart Savings Hub & Summary Section ───────────────────────────────────
 
-class _SummarySection extends StatelessWidget {
+class _SummarySection extends ConsumerWidget {
   final MonthlySummary summary;
 
   const _SummarySection({required this.summary});
 
+  void _showEditTargetDialog(BuildContext context, WidgetRef ref, double currentTarget) {
+    final controller = TextEditingController(text: currentTarget.toStringAsFixed(0));
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Set Monthly Savings Target'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Target Amount (₹)',
+            hintText: 'Enter amount',
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              final newTarget = double.tryParse(controller.text);
+              if (newTarget != null && newTarget > 0) {
+                ref.read(savingsTargetProvider.notifier).setTarget(newTarget);
+              }
+              Navigator.pop(context);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final target = ref.watch(savingsTargetProvider);
+    final savedAmount = summary.totalIncome - summary.totalExpense;
+
+    final progressPercent = target > 0 ? (savedAmount / target).clamp(0.0, 1.0) : 0.0;
+    final isGoalAchieved = savedAmount >= target;
+
+    final tipIndex = DateTime.now().day % _savingTips.length;
+    final dailyTip = _savingTips[tipIndex];
+
+    String statusText = '';
+    if (savedAmount <= 0) {
+      statusText = '⚠️ Spent more than earned. Try tracking discretionary expenses.';
+    } else if (isGoalAchieved) {
+      statusText = '🎉 Congratulations! You have achieved your savings target!';
+    } else {
+      statusText = '🎯 Keep going! You are ${(progressPercent * 100).toStringAsFixed(0)}% towards your target.';
+    }
+
     return Column(
       children: [
-        // Net savings â€” hero card
+        // ── Smart Savings Hub Card ──────────────────────────
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(22),
           decoration: BoxDecoration(
-            gradient: summary.netSavings >= 0
+            gradient: isGoalAchieved
                 ? AppColors.incomeGradient
-                : AppColors.expenseGradient,
-            borderRadius: BorderRadius.circular(20),
+                : AppColors.primaryGradient,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: (isGoalAchieved ? AppColors.credit : AppColors.primary)
+                    .withValues(alpha: 0.25),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Net Savings',
-                  style: AppTextStyles.bodyMedium
-                      .copyWith(color: Colors.white.withValues(alpha: 0.8))),
-              const SizedBox(height: 4),
-              Text(
-                CurrencyUtils.format(summary.netSavings.abs()),
-                style: AppTextStyles.moneyLarge,
-              ),
-              const SizedBox(height: 6),
               Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Icon(
+                  Row(
+                    children: [
+                      const Icon(Icons.track_changes_rounded, color: Colors.white, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Smart Savings Hub',
+                        style: AppTextStyles.titleMedium.copyWith(
+                          color: Colors.white.withValues(alpha: 0.9),
+                        ),
+                      ),
+                    ],
+                  ),
+                  GestureDetector(
+                    onTap: () => _showEditTargetDialog(context, ref, target),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.edit_rounded, color: Colors.white, size: 12),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Edit Target',
+                            style: AppTextStyles.labelSmall.copyWith(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Current Savings',
+                        style: AppTextStyles.labelSmall.copyWith(
+                          color: Colors.white.withValues(alpha: 0.7),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        CurrencyUtils.format(savedAmount.clamp(0, double.infinity)),
+                        style: AppTextStyles.moneyLarge.copyWith(color: Colors.white),
+                      ),
+                    ],
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        'Target',
+                        style: AppTextStyles.labelSmall.copyWith(
+                          color: Colors.white.withValues(alpha: 0.7),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        CurrencyUtils.format(target),
+                        style: AppTextStyles.titleLarge.copyWith(color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              // Progress Bar
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: progressPercent,
+                  backgroundColor: Colors.white.withValues(alpha: 0.2),
+                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                  minHeight: 6,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
                     summary.savingsRate >= 0.3
                         ? Icons.trending_up_rounded
                         : Icons.trending_down_rounded,
@@ -767,6 +956,91 @@ class _LegendDot extends StatelessWidget {
         const SizedBox(width: 5),
         Text(label, style: AppTextStyles.labelSmall),
       ],
+    );
+  }
+}
+
+// ── Quick Categorization Widget ──────────────────────────────────────────
+
+class _QuickCategorizationCard extends ConsumerWidget {
+  final Transaction tx;
+
+  const _QuickCategorizationCard({required this.tx});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final categories = AppCategories.categories;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Card(
+      color: AppColors.primary.withValues(alpha: 0.15),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.help_outline_rounded, color: AppColors.primary, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'What was this payment for?',
+                  style: AppTextStyles.titleMedium.copyWith(color: AppColors.primary),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () {
+                    ref.read(dismissedSmsTxIdsProvider.notifier).update((state) => {...state, tx.id});
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'A payment of ₹${tx.amount.toStringAsFixed(0)} was made to "${tx.merchant}". Select a category:',
+              style: AppTextStyles.bodyMedium,
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              height: 38,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: categories.map((cat) {
+                  if (cat.name == 'Other' || cat.name == 'Income') return const SizedBox.shrink();
+
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ActionChip(
+                      avatar: Text(cat.emoji),
+                      label: Text(cat.name),
+                      onPressed: () async {
+                        final updated = tx.copyWith(category: cat.name);
+                        await ref.read(transactionRepositoryProvider).update(updated);
+                        
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Transaction categorized as ${cat.name}'),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                      labelStyle: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: isDark ? Colors.white70 : Colors.black87,
+                      ),
+                      backgroundColor: isDark ? AppColors.surfaceVariant : const Color(0xFFF2F2F7),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

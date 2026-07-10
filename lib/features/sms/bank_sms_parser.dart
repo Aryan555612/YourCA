@@ -132,14 +132,49 @@ class BankSmsParser {
   }
 
   String? _identifyBank(String sender, String body) {
+    // 1. Clean sender ID to extract the core alphabetic header (usually 6 letters)
+    // E.g., "JD-MUCBNK-S" -> ["JD", "MUCBNK", "S"]
+    String cleanSender = sender.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9-]'), '');
+    final parts = cleanSender.split('-');
+    
+    // Find the part that is likely the bank header (usually 4 to 8 characters)
+    String header = '';
+    for (final part in parts) {
+      if (part.length >= 4 && part.length <= 8) {
+        header = part;
+        break;
+      }
+    }
+    if (header.isEmpty && parts.isNotEmpty) {
+      header = parts.last;
+    }
+
+    // Check if the header matches any of our predefined bank mappings
     for (final entry in _senderBankMap.entries) {
-      if (sender.toUpperCase().contains(entry.key)) return entry.value;
+      if (header.contains(entry.key.toUpperCase()) || sender.toUpperCase().contains(entry.key.toUpperCase())) {
+        return entry.value;
+      }
     }
-    // Fallback: check body for bank-like patterns
-    final bankNames = ['SBI', 'HDFC', 'ICICI', 'Axis', 'Kotak', 'PNB', 'IndusInd', 'Yes Bank', 'IDFC'];
-    for (final name in bankNames) {
-      if (body.toUpperCase().contains(name.toUpperCase())) return name;
+
+    // Check if it is a transaction notification by scanning for keywords
+    final hasAmount = _amountPatterns.any((p) => p.hasMatch(body));
+    final isTx = _debitPattern.hasMatch(body) || _creditPattern.hasMatch(body);
+    final hasAcct = RegExp(r'\b(?:a/c|acct|account|card|xx\d{2,})\b', caseSensitive: false).hasMatch(body);
+
+    if (hasAmount && isTx && hasAcct) {
+      // It is a valid transaction! Identify bank by cleaning the header
+      // E.g. "MUCBNK" -> "MUCB"
+      if (header.isNotEmpty) {
+        String bankName = header;
+        // Strip common suffixes
+        if (bankName.endsWith('BNK')) bankName = bankName.substring(0, bankName.length - 3);
+        if (bankName.endsWith('BK')) bankName = bankName.substring(0, bankName.length - 2);
+        if (bankName.endsWith('SMS')) bankName = bankName.substring(0, bankName.length - 3);
+        if (bankName.isNotEmpty) return bankName;
+      }
+      return 'Bank';
     }
+
     return null;
   }
 

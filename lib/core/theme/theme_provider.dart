@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'app_colors.dart';
 
 final themeModeProvider = StateNotifierProvider<ThemeModeNotifier, ThemeMode>((ref) {
   return ThemeModeNotifier();
@@ -10,7 +11,14 @@ class ThemeModeNotifier extends StateNotifier<ThemeMode> {
   static const _prefKey = 'theme_mode';
 
   ThemeModeNotifier() : super(ThemeMode.dark) {
+    AppColors.isDarkMode = true;
     _loadTheme();
+  }
+
+  @override
+  set state(ThemeMode value) {
+    AppColors.isDarkMode = (value == ThemeMode.dark);
+    super.state = value;
   }
 
   Future<void> _loadTheme() async {

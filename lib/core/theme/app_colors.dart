@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
 abstract class AppColors {
-  // Backgrounds - Pitch black matching Samsung OLED dark mode
-  static const Color background = Color(0xFF000000);
-  static const Color surface = Color(0xFF121212);
-  static const Color surfaceVariant = Color(0xFF1C1C1E);
-  static const Color cardBackground = Color(0xFF151517);
+  static bool isDarkMode = true; // Controlled by ThemeModeNotifier
+
+  // Backgrounds
+  static Color get background => isDarkMode ? const Color(0xFF000000) : const Color(0xFFF9F9FB);
+  static Color get surface => isDarkMode ? const Color(0xFF121212) : const Color(0xFFFFFFFF);
+  static Color get surfaceVariant => isDarkMode ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7);
+  static Color get cardBackground => isDarkMode ? const Color(0xFF151517) : const Color(0xFFFFFFFF);
 
   // Primary — Samsung Cobalt Blue / Violet accent
   static const Color primary = Color(0xFF3F8EFC);
@@ -27,15 +29,15 @@ abstract class AppColors {
   static const Color warning = Color(0xFFFFB703);
   static const Color warningGlow = Color(0x22FFB703);
 
-  // Text - Clean white/gray hierarchy
-  static const Color textPrimary = Color(0xFFFFFFFF);
-  static const Color textSecondary = Color(0xFF8E8E93);
-  static const Color textTertiary = Color(0xFF636366);
-  static const Color textDisabled = Color(0xFF3A3A3C);
+  // Text
+  static Color get textPrimary => isDarkMode ? const Color(0xFFFFFFFF) : const Color(0xFF1C1C1E);
+  static Color get textSecondary => isDarkMode ? const Color(0xFF8E8E93) : const Color(0xFF8E8E93);
+  static Color get textTertiary => isDarkMode ? const Color(0xFF636366) : const Color(0xFFAEAEB2);
+  static Color get textDisabled => isDarkMode ? const Color(0xFF3A3A3C) : const Color(0xFFE5E5EA);
 
-  // Borders & Dividers - Extremely subtle to blend naturally
-  static const Color border = Color(0xFF2C2C2E);
-  static const Color divider = Color(0xFF1C1C1E);
+  // Borders & Dividers
+  static Color get border => isDarkMode ? const Color(0xFF2C2C2E) : const Color(0xFFE5E5EA);
+  static Color get divider => isDarkMode ? const Color(0xFF1C1C1E) : const Color(0xFFE5E5EA);
 
   // Category colors - One UI soft pastel tones
   static const Color catFood = Color(0xFFFF7A5A);
@@ -50,33 +52,37 @@ abstract class AppColors {
   static const Color catIncome = Color(0xFF2EC4B6);
   static const Color catOther = Color(0xFF8E8E93);
 
-  // Gradients - Pure, professional colors without excessive noise
-  static const LinearGradient primaryGradient = LinearGradient(
+  // Gradients
+  static LinearGradient get primaryGradient => const LinearGradient(
     colors: [Color(0xFF3F8EFC), Color(0xFF6E56FF)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
-  static const LinearGradient incomeGradient = LinearGradient(
+  static LinearGradient get incomeGradient => const LinearGradient(
     colors: [Color(0xFF1EA896), Color(0xFF2EC4B6)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
-  static const LinearGradient expenseGradient = LinearGradient(
+  static LinearGradient get expenseGradient => const LinearGradient(
     colors: [Color(0xFFE05252), Color(0xFFFF5E5B)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
-  static const LinearGradient cardGradient = LinearGradient(
-    colors: [Color(0xFF151517), Color(0xFF121212)],
+  static LinearGradient get cardGradient => LinearGradient(
+    colors: isDarkMode 
+        ? [const Color(0xFF151517), const Color(0xFF121212)]
+        : [const Color(0xFFFFFFFF), const Color(0xFFFFFFFF)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
-  static const LinearGradient backgroundGradient = LinearGradient(
-    colors: [Color(0xFF000000), Color(0xFF0C0C0E)],
+  static LinearGradient get backgroundGradient => LinearGradient(
+    colors: isDarkMode
+        ? [const Color(0xFF000000), const Color(0xFF0C0C0E)]
+        : [const Color(0xFFF9F9FB), const Color(0xFFF9F9FB)],
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
   );
