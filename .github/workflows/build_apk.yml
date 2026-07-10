@@ -38,6 +38,10 @@ jobs:
           rm -rf .gradle
           ./gradlew clean --no-daemon || true
 
+      - name: Generate Release Keystore
+        run: |
+          keytool -genkey -v -keystore android/app/release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias yourcakey -storepass yourcapassword -keypass yourcapassword -dname "CN=YourCA, OU=Development, O=YourCA, L=New Delhi, S=Delhi, C=IN"
+
       - name: Build release APK
         run: flutter build apk --release
 

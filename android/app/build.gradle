@@ -50,9 +50,22 @@ android {
         multiDexEnabled true
     }
 
+    signingConfigs {
+        release {
+            storeFile file('release.jks')
+            storePassword 'yourcapassword'
+            keyAlias 'yourcakey'
+            keyPassword 'yourcapassword'
+        }
+    }
+
     buildTypes {
         release {
-            signingConfig signingConfigs.debug
+            if (file('release.jks').exists()) {
+                signingConfig signingConfigs.release
+            } else {
+                signingConfig signingConfigs.debug
+            }
             minifyEnabled false
             shrinkResources false
         }
