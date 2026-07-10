@@ -149,7 +149,7 @@ class _MonthSelector extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           IconButton(
-            icon: const Icon(Icons.chevron_left_rounded,
+            icon: Icon(Icons.chevron_left_rounded,
                 color: AppColors.textSecondary),
             onPressed: () {
               ref.read(selectedMonthProvider.notifier).state = DateTime(

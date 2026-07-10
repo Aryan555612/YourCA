@@ -229,6 +229,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   void _startSmsListener() {
     ref.read(smsListenerProvider).start();
+  }
+
   Future<void> _onSmsGranted() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_prefKey, true);
@@ -334,7 +336,7 @@ class _DashboardContent extends ConsumerWidget {
                 ],
               ),
               background: Container(
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                     gradient: AppColors.backgroundGradient),
               ),
             ),
@@ -350,7 +352,7 @@ class _DashboardContent extends ConsumerWidget {
 
                 // Quick Categorization Card (if any pending SMS transaction needs category selection)
                 if (pendingSmsTx != null) ...[
-                  _QuickCategorizationCard(tx: pendingSmsTx!),
+                  _QuickCategorizationCard(tx: pendingSmsTx),
                   const SizedBox(height: 16),
                 ],
 
@@ -408,7 +410,7 @@ class _MonthRow extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         IconButton(
-          icon: const Icon(Icons.chevron_left_rounded,
+          icon: Icon(Icons.chevron_left_rounded,
               color: AppColors.textSecondary),
           onPressed: () {
             ref.read(selectedMonthProvider.notifier).state = DateTime(
@@ -444,6 +446,15 @@ class _SummarySection extends ConsumerWidget {
   final MonthlySummary summary;
 
   const _SummarySection({required this.summary});
+
+  static const List<String> _savingTips = [
+    'Save ₹150 daily on coffee or dining out to hit your goal 4 days earlier.',
+    'Review your Category chart: Shopping is high! Try cutting it by 10% next week.',
+    'Put 20% of your income into savings automatically on payday to stay on track.',
+    'Unsubscribe from streaming services you haven\'t used in the last 30 days.',
+    'Set a shopping list before going to the supermarket to prevent impulse buying.',
+    'Save money automatically by tracking your recurring subscription payments.'
+  ];
 
   void _showEditTargetDialog(BuildContext context, WidgetRef ref, double currentTarget) {
     final controller = TextEditingController(text: currentTarget.toStringAsFixed(0));
@@ -616,24 +627,36 @@ class _SummarySection extends ConsumerWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                    summary.savingsRate >= 0.3
-                        ? Icons.trending_up_rounded
-                        : Icons.trending_down_rounded,
-                    color: Colors.white.withValues(alpha: 0.9),
-                    size: 18,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Savings rate: ${(summary.savingsRate * 100).toStringAsFixed(1)}%',
-                    style: AppTextStyles.bodyMedium
-                        .copyWith(color: Colors.white.withValues(alpha: 0.9)),
+                statusText,
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Divider(color: Colors.white24, height: 1),
+              ),
+              // Savings Tip section
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.lightbulb_rounded, color: Colors.amberAccent, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      dailyTip,
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: Colors.white.withValues(alpha: 0.85),
+                      ),
+                    ),
                   ),
                 ],
               ),
             ],
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         Row(
           children: [
             Expanded(
@@ -969,7 +992,7 @@ class _QuickCategorizationCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final categories = AppCategories.categories;
+    final categories = AppCategories.all;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Card(

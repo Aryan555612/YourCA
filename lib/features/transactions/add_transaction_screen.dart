@@ -94,7 +94,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen>
       lastDate: DateTime.now(),
       builder: (context, child) => Theme(
         data: Theme.of(context).copyWith(
-          colorScheme: const ColorScheme.dark(
+          colorScheme: ColorScheme.dark(
             primary: AppColors.primary,
             surface: AppColors.surface,
           ),
@@ -334,7 +334,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen>
         ),
         child: Row(
           children: [
-            const Icon(Icons.calendar_month_outlined,
+            Icon(Icons.calendar_month_outlined,
                 color: AppColors.textSecondary),
             const SizedBox(width: 12),
             Column(
@@ -350,7 +350,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen>
               ],
             ),
             const Spacer(),
-            const Icon(Icons.chevron_right_rounded,
+            Icon(Icons.chevron_right_rounded,
                 color: AppColors.textSecondary),
           ],
         ),

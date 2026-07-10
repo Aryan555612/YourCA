@@ -50,7 +50,7 @@ class TransactionDetailScreen extends ConsumerWidget {
                       PopupMenuItem(
                         value: 'edit',
                         child: Row(children: [
-                          const Icon(Icons.edit_outlined,
+                          Icon(Icons.edit_outlined,
                               color: AppColors.textSecondary, size: 18),
                           const SizedBox(width: 8),
                           Text('Edit', style: AppTextStyles.bodyMedium),

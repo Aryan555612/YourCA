@@ -124,7 +124,7 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(gradient: AppColors.backgroundGradient),
+        decoration: BoxDecoration(gradient: AppColors.backgroundGradient),
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -140,7 +140,7 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
                       _codeSent = false;
                       for (final c in _controllers) c.clear();
                     }),
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                    icon: Icon(Icons.arrow_back_ios_new_rounded,
                         color: AppColors.textPrimary),
                   )
                 else
@@ -259,7 +259,7 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
           contentPadding: const EdgeInsets.symmetric(vertical: 16),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: AppColors.border, width: 1.5),
+            borderSide: BorderSide(color: AppColors.border, width: 1.5),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),

@@ -9,7 +9,7 @@ class AppTheme {
       useMaterial3: true,
       brightness: Brightness.dark,
       scaffoldBackgroundColor: AppColors.background,
-      colorScheme: const ColorScheme.dark(
+      colorScheme: ColorScheme.dark(
         primary: AppColors.primary,
         secondary: AppColors.credit,
         surface: AppColors.surface,
@@ -36,13 +36,13 @@ class AppTheme {
         scrolledUnderElevation: 0,
         centerTitle: true,
         titleTextStyle: AppTextStyles.headlineMedium.copyWith(fontWeight: FontWeight.w700),
-        iconTheme: const IconThemeData(color: AppColors.textPrimary),
+        iconTheme: IconThemeData(color: AppColors.textPrimary),
         systemOverlayStyle: const SystemUiOverlayStyle(
           statusBarColor: Colors.transparent,
           statusBarIconBrightness: Brightness.light,
         ),
       ),
-      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
         backgroundColor: AppColors.surface,
         selectedItemColor: AppColors.primary,
         unselectedItemColor: AppColors.textTertiary,
@@ -64,7 +64,7 @@ class AppTheme {
           if (states.contains(WidgetState.selected)) {
             return const IconThemeData(color: AppColors.primaryLight, size: 24);
           }
-          return const IconThemeData(color: AppColors.textTertiary, size: 24);
+          return IconThemeData(color: AppColors.textTertiary, size: 24);
         }),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
@@ -141,7 +141,7 @@ class AppTheme {
           borderRadius: BorderRadius.circular(20), // Rounded chips
         ),
       ),
-      dividerTheme: const DividerThemeData(
+      dividerTheme: DividerThemeData(
         color: AppColors.divider,
         thickness: 1,
         space: 0,
@@ -162,7 +162,7 @@ class AppTheme {
         ),
         behavior: SnackBarBehavior.floating,
       ),
-      listTileTheme: const ListTileThemeData(
+      listTileTheme: ListTileThemeData(
         tileColor: Colors.transparent,
         iconColor: AppColors.textSecondary,
         textColor: AppColors.textPrimary,

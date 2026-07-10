@@ -21,7 +21,7 @@ class MainShell extends StatelessWidget {
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: AppColors.surface,
-          border: const Border(
+          border: Border(
               top: BorderSide(color: AppColors.border, width: 1)),
           boxShadow: [
             BoxShadow(
