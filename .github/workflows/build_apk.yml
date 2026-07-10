@@ -38,34 +38,28 @@ jobs:
           rm -rf .gradle
           ./gradlew clean --no-daemon || true
 
-      # ── Decode the permanent keystore from GitHub Secrets ─────────────────────
-      - name: Decode Release Keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+      # ── Automatically generate temporary release keystore ─────────────────────
+      - name: Generate Temporary Release Keystore
         run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::error::GitHub secret KEYSTORE_BASE64 is empty or missing!"
-            exit 1
-          fi
-          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/yourca-release.jks
-          echo "Keystore decoded successfully"
+          keytool -genkey -v -keystore android/app/yourca-release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias yourcakey -storepass "YourCA@2024#Secure" -keypass "YourCA@2024#Secure" -dname "CN=YourCA App, OU=Mobile, O=YourCA, L=New Delhi, S=Delhi, C=IN"
+          echo "Temporary keystore generated successfully"
 
       # ── Build signed release APK (for sharing via WhatsApp) ───────────────────
       - name: Build signed release APK
         env:
           ANDROID_KEYSTORE_PATH: "yourca-release.jks"
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          ANDROID_KEYSTORE_PASSWORD: "YourCA@2024#Secure"
+          ANDROID_KEY_ALIAS: "yourcakey"
+          ANDROID_KEY_PASSWORD: "YourCA@2024#Secure"
         run: flutter build apk --release
 
       # ── Build signed AAB (for future Play Store use) ───────────────────────────
       - name: Build signed App Bundle (AAB)
         env:
           ANDROID_KEYSTORE_PATH: "yourca-release.jks"
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          ANDROID_KEYSTORE_PASSWORD: "YourCA@2024#Secure"
+          ANDROID_KEY_ALIAS: "yourcakey"
+          ANDROID_KEY_PASSWORD: "YourCA@2024#Secure"
         run: flutter build appbundle --release
 
       # ── Upload APK (WhatsApp-sharable) ────────────────────────────────────────
