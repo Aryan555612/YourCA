@@ -8,6 +8,7 @@ import '../../features/transactions/transaction_list_screen.dart';
 import '../../features/transactions/transaction_detail_screen.dart';
 import '../../features/transactions/csv_import_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
+import '../../features/dashboard/merchant_breakdown_screen.dart';
 import '../../features/savings/savings_screen.dart';
 import '../../features/categories/categories_screen.dart';
 import '../../features/profile/profile_screen.dart';
@@ -43,6 +44,15 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/dashboard',
             name: 'dashboard',
             builder: (context, state) => const DashboardScreen(),
+          ),
+          GoRoute(
+            path: '/merchant-breakdown/:type',
+            name: 'merchantBreakdown',
+            builder: (context, state) {
+              final typeString = state.pathParameters['type']!;
+              final type = typeString == 'debit' ? TransactionType.debit : TransactionType.credit;
+              return MerchantBreakdownScreen(type: type);
+            },
           ),
           GoRoute(
             path: '/transactions',
