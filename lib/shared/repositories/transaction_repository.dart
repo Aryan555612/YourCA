@@ -89,4 +89,17 @@ class TransactionRepository {
         .map((d) => Transaction.fromFirestore(d.data(), d.id))
         .toList();
   }
+
+  // ── Fetch transactions between two specific dates ──────────────────────
+  Future<List<Transaction>> fetchDateRange(
+      String userId, DateTime start, DateTime end) async {
+    final snap = await _txCol(userId)
+        .where('date', isGreaterThanOrEqualTo: start.toIso8601String())
+        .where('date', isLessThanOrEqualTo: end.toIso8601String())
+        .get();
+
+    return snap.docs
+        .map((d) => Transaction.fromFirestore(d.data(), d.id))
+        .toList();
+  }
 }

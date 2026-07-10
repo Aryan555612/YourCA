@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
@@ -318,7 +318,7 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text('ðŸ’¸', style: const TextStyle(fontSize: 56)),
+          Text('\u{1F4B8}', style: const TextStyle(fontSize: 56)),
           const SizedBox(height: 16),
           Text(
             hasFilter ? 'No transactions in this category' : 'No transactions yet',

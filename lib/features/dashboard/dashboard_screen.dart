@@ -13,6 +13,7 @@ import '../../shared/repositories/transaction_repository.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../features/transactions/transaction_list_screen.dart';
 import '../../features/sms/sms_permission_screen.dart';
+import 'package:go_router/go_router.dart';
 import '../../features/sms/sms_listener_service.dart';
 import '../../shared/widgets/summary_card.dart';
 
@@ -51,44 +52,114 @@ final monthlySummaryProvider =
   );
 });
 
-final last6MonthsSummaryProvider =
-    FutureProvider.autoDispose<List<MonthlySummary>>((ref) async {
+enum TrendRange {
+  oneWeek,
+  oneMonth,
+  threeMonths,
+  sixMonths,
+  oneYear,
+}
+
+class TrendDataPoint {
+  final String label;
+  final double income;
+  final double expense;
+
+  const TrendDataPoint({
+    required this.label,
+    required this.income,
+    required this.expense,
+  });
+}
+
+final selectedTrendRangeProvider = StateProvider<TrendRange>((ref) => TrendRange.sixMonths);
+
+final trendDataProvider = FutureProvider.autoDispose<List<TrendDataPoint>>((ref) async {
   final userId = ref.watch(currentUserIdProvider);
-  final now = DateTime.now();
+  final range = ref.watch(selectedTrendRangeProvider);
   if (userId == null) return [];
 
-  final months = DateUtils2.last6Months(now);
-  final summaries = <MonthlySummary>[];
+  final now = DateTime.now();
+  final repo = ref.watch(transactionRepositoryProvider);
 
-  for (final month in months) {
-    final txs = await ref
-        .read(transactionRepositoryProvider)
-        .fetchMonth(userId, month);
+  switch (range) {
+    case TrendRange.oneWeek:
+      final start = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 6));
+      final end = DateTime(now.year, now.month, now.day, 23, 59, 59);
+      final txs = await repo.fetchDateRange(userId, start, end);
 
-    double income = 0;
-    double expense = 0;
-    final catBreakdown = <String, double>{};
-
-    for (final tx in txs) {
-      if (tx.type == TransactionType.credit) {
-        income += tx.amount;
-      } else {
-        expense += tx.amount;
-        catBreakdown[tx.category] =
-            (catBreakdown[tx.category] ?? 0) + tx.amount;
+      final points = <TrendDataPoint>[];
+      for (int i = 0; i < 7; i++) {
+        final date = start.add(Duration(days: i));
+        double income = 0;
+        double expense = 0;
+        for (final tx in txs) {
+          final txDate = tx.date;
+          if (txDate.year == date.year && txDate.month == date.month && txDate.day == date.day) {
+            if (tx.type == TransactionType.credit) {
+              income += tx.amount;
+            } else {
+              expense += tx.amount;
+            }
+          }
+        }
+        final weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        final label = weekdayLabels[date.weekday - 1];
+        points.add(TrendDataPoint(label: label, income: income, expense: expense));
       }
-    }
+      return points;
 
-    summaries.add(MonthlySummary(
-      month: month,
-      totalIncome: income,
-      totalExpense: expense,
-      categoryBreakdown: catBreakdown,
-      transactionCount: txs.length,
-    ));
+    case TrendRange.oneMonth:
+      final start = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 27));
+      final end = DateTime(now.year, now.month, now.day, 23, 59, 59);
+      final txs = await repo.fetchDateRange(userId, start, end);
+
+      final points = <TrendDataPoint>[];
+      for (int w = 0; w < 4; w++) {
+        final wStart = start.add(Duration(days: w * 7));
+        final wEnd = wStart.add(const Duration(days: 6, hours: 23, minutes: 59, seconds: 59));
+        double income = 0;
+        double expense = 0;
+        for (final tx in txs) {
+          if (tx.date.isAfter(wStart.subtract(const Duration(seconds: 1))) && tx.date.isBefore(wEnd.add(const Duration(seconds: 1)))) {
+            if (tx.type == TransactionType.credit) {
+              income += tx.amount;
+            } else {
+              expense += tx.amount;
+            }
+          }
+        }
+        points.add(TrendDataPoint(label: 'W${w + 1}', income: income, expense: expense));
+      }
+      return points;
+
+    case TrendRange.threeMonths:
+    case TrendRange.sixMonths:
+    case TrendRange.oneYear:
+      final count = range == TrendRange.threeMonths ? 3 : (range == TrendRange.sixMonths ? 6 : 12);
+      final points = <TrendDataPoint>[];
+      
+      for (int i = count - 1; i >= 0; i--) {
+        final monthDate = DateTime(now.year, now.month - i, 1);
+        final start = DateTime(monthDate.year, monthDate.month, 1);
+        final end = DateTime(monthDate.year, monthDate.month + 1, 0, 23, 59, 59);
+        final txs = await repo.fetchDateRange(userId, start, end);
+
+        double income = 0;
+        double expense = 0;
+        for (final tx in txs) {
+          if (tx.type == TransactionType.credit) {
+            income += tx.amount;
+          } else {
+            expense += tx.amount;
+          }
+        }
+        final monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        final label = '${monthNames[start.month - 1]} ${start.year.toString().substring(2)}';
+        points.add(TrendDataPoint(label: label, income: income, expense: expense));
+      }
+      return points;
   }
-
-  return summaries;
 });
 
 // â”€â”€ Screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -164,7 +235,7 @@ class _DashboardContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final summaryAsync = ref.watch(monthlySummaryProvider);
-    final historyAsync = ref.watch(last6MonthsSummaryProvider);
+    final trendDataAsync = ref.watch(trendDataProvider);
     final selectedMonth = ref.watch(selectedMonthProvider);
     final userAsync = ref.watch(userProfileProvider);
 
@@ -172,7 +243,7 @@ class _DashboardContent extends ConsumerWidget {
       backgroundColor: AppColors.background,
       body: CustomScrollView(
         slivers: [
-          // â”€â”€ App Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+          // ── App Bar ──────────────────────────────────────────
           SliverAppBar(
             expandedHeight: 120,
             backgroundColor: AppColors.background,
@@ -197,25 +268,24 @@ class _DashboardContent extends ConsumerWidget {
                   Text('YourCA', style: AppTextStyles.headlineMedium),
                   const Spacer(),
                   userAsync.when(
-                    data: (user) => Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'ðŸ‘‹ ${user != null && user.name.isNotEmpty ? user.name.split(' ').first : "Hello"}',
-                          style: AppTextStyles.bodyMedium
-                              .copyWith(color: AppColors.textSecondary),
+                    data: (user) => IconButton(
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      icon: CircleAvatar(
+                        radius: 16,
+                        backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+                        child: Text(
+                          user != null && user.name.isNotEmpty
+                              ? user.name[0].toUpperCase()
+                              : 'U',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primary,
+                          ),
                         ),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          icon: const Icon(Icons.logout_rounded,
-                              color: AppColors.textSecondary, size: 18),
-                          onPressed: () async {
-                            await ref.read(authNotifierProvider.notifier).signOut();
-                          },
-                        ),
-                      ],
+                      ),
+                      onPressed: () => context.pushNamed('profile'),
                     ),
                     loading: () => const SizedBox.shrink(),
                     error: (_, __) => const SizedBox.shrink(),
@@ -256,10 +326,10 @@ class _DashboardContent extends ConsumerWidget {
                 ),
                 const SizedBox(height: 24),
 
-                // 6-month bar chart
-                historyAsync.when(
-                  data: (months) =>
-                      months.isEmpty ? const SizedBox.shrink() : _BarChart(months: months),
+                // Dynamic Trend Chart
+                trendDataAsync.when(
+                  data: (points) =>
+                      points.isEmpty ? const SizedBox.shrink() : _BarChart(points: points),
                   loading: () => const SizedBox.shrink(),
                   error: (_, __) => const SizedBox.shrink(),
                 ),
@@ -506,52 +576,104 @@ class _CategoryChartState extends State<_CategoryChart> {
 
 // â”€â”€ 6-Month Bar Chart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-class _BarChart extends StatelessWidget {
-  final List<MonthlySummary> months;
+class _BarChart extends ConsumerWidget {
+  final List<TrendDataPoint> points;
 
-  const _BarChart({required this.months});
+  const _BarChart({required this.points});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selectedRange = ref.watch(selectedTrendRangeProvider);
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('6-Month Trend', style: AppTextStyles.headlineSmall),
-            const SizedBox(height: 4),
             Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _LegendDot(color: AppColors.credit, label: 'Income'),
-                const SizedBox(width: 16),
-                _LegendDot(color: AppColors.debit, label: 'Expense'),
+                Text('Financial Trend', style: AppTextStyles.headlineSmall),
+                Row(
+                  children: [
+                    _LegendDot(color: AppColors.credit, label: 'In'),
+                    const SizedBox(width: 8),
+                    _LegendDot(color: AppColors.debit, label: 'Out'),
+                  ],
+                ),
               ],
             ),
+            const SizedBox(height: 12),
+            
+            // ── Segmented Range Selector ──────────────────────
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: TrendRange.values.map((range) {
+                  final isSelected = range == selectedRange;
+                  String label = '';
+                  switch (range) {
+                    case TrendRange.oneWeek: label = '1W'; break;
+                    case TrendRange.oneMonth: label = '1M'; break;
+                    case TrendRange.threeMonths: label = '3M'; break;
+                    case TrendRange.sixMonths: label = '6M'; break;
+                    case TrendRange.oneYear: label = '1Y'; break;
+                  }
+
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: Text(label),
+                      selected: isSelected,
+                      onSelected: (val) {
+                        if (val) {
+                          ref.read(selectedTrendRangeProvider.notifier).state = range;
+                        }
+                      },
+                      labelStyle: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isSelected
+                            ? Colors.white
+                            : (isDark ? Colors.white70 : Colors.black87),
+                      ),
+                      selectedColor: AppColors.primary,
+                      backgroundColor: isDark ? AppColors.surfaceVariant : const Color(0xFFF2F2F7),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
             const SizedBox(height: 20),
+
+            // ── Bar Chart ─────────────────────────────────────
             SizedBox(
               height: 180,
               child: BarChart(
                 BarChartData(
                   alignment: BarChartAlignment.spaceAround,
-                  maxY: months.fold<double>(
+                  maxY: points.fold<double>(
                           0,
-                          (max, m) =>
-                              m.totalIncome > max ? m.totalIncome : max) *
+                          (max, p) => p.income > max
+                              ? p.income
+                              : (p.expense > max ? p.expense : max)) *
                       1.3,
                   barTouchData: BarTouchData(
                     touchTooltipData: BarTouchTooltipData(
-                      getTooltipColor: (_) => AppColors.surface,
+                      getTooltipColor: (_) => isDark ? AppColors.surface : Colors.white,
                       getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                        final month = months[group.x];
+                        final point = points[group.x];
                         return BarTooltipItem(
-                          '${DateUtils2.toShortMonthYear(month.month)}\n',
+                          '${point.label}\n',
                           AppTextStyles.labelSmall.copyWith(color: AppColors.textSecondary),
                           children: [
                             TextSpan(
                               text: rodIndex == 0
-                                  ? CurrencyUtils.formatCompact(month.totalIncome)
-                                  : CurrencyUtils.formatCompact(month.totalExpense),
+                                  ? CurrencyUtils.formatCompact(point.income)
+                                  : CurrencyUtils.formatCompact(point.expense),
                               style: AppTextStyles.labelMedium.copyWith(
                                 color: rodIndex == 0 ? AppColors.credit : AppColors.debit,
                               ),
@@ -572,10 +694,16 @@ class _BarChart extends StatelessWidget {
                       sideTitles: SideTitles(
                         showTitles: true,
                         getTitlesWidget: (x, meta) {
-                          final month = months[x.toInt()];
-                          return Text(
-                            DateUtils2.toShortMonthYear(month.month),
-                            style: AppTextStyles.labelSmall,
+                          if (x.toInt() >= points.length || x.toInt() < 0) {
+                            return const SizedBox.shrink();
+                          }
+                          final point = points[x.toInt()];
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(
+                              point.label.split(' ').first,
+                              style: AppTextStyles.labelSmall,
+                            ),
                           );
                         },
                       ),
@@ -584,28 +712,28 @@ class _BarChart extends StatelessWidget {
                   gridData: FlGridData(
                     show: true,
                     getDrawingHorizontalLine: (_) => FlLine(
-                      color: AppColors.border.withValues(alpha: 0.5),
+                      color: (isDark ? AppColors.border : const Color(0xFFE5E5EA)).withValues(alpha: 0.5),
                       strokeWidth: 0.5,
                     ),
                     drawVerticalLine: false,
                   ),
                   borderData: FlBorderData(show: false),
-                  barGroups: months.asMap().entries.map((entry) {
+                  barGroups: points.asMap().entries.map((entry) {
                     final i = entry.key;
-                    final m = entry.value;
+                    final p = entry.value;
                     return BarChartGroupData(
                       x: i,
                       barRods: [
                         BarChartRodData(
-                          toY: m.totalIncome,
+                          toY: p.income,
                           color: AppColors.credit,
-                          width: 10,
+                          width: points.length > 8 ? 6 : 10,
                           borderRadius: BorderRadius.circular(4),
                         ),
                         BarChartRodData(
-                          toY: m.totalExpense,
+                          toY: p.expense,
                           color: AppColors.debit,
-                          width: 10,
+                          width: points.length > 8 ? 6 : 10,
                           borderRadius: BorderRadius.circular(4),
                         ),
                       ],
