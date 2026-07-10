@@ -9,9 +9,8 @@ build/
 pubspec.lock
 
 # ── Firebase (NEVER commit real credentials) ───────────────────────────────────
-lib/firebase_options.dart
-android/app/google-services.json
-ios/Runner/GoogleService-Info.plist
+# Note: firebase_options.dart and google-services.json contain project config
+# (not secrets). Security is enforced by Firestore Rules, not these files.
 .firebase/
 firebase-debug.log
 firestore-debug.log
