@@ -1,4 +1,4 @@
-﻿# Flutter-specific ProGuard rules for YourCA
+# Flutter-specific ProGuard rules for YourCA
 
 # Flutter wrapper
 -keep class io.flutter.app.** { *; }
@@ -29,3 +29,6 @@
 # General Android
 -keepattributes SourceFile,LineNumberTable
 -keepattributes *Annotation*
+
+# Flutter Play Store Split / Deferred components (not used, ignore missing classes)
+-dontwarn com.google.android.play.core.**
