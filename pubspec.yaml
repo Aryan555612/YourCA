@@ -1,0 +1,74 @@
+name: yourca
+description: "YourCA — Cross-platform personal finance tracking app"
+publish_to: "none"
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Firebase
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1
+  cloud_firestore: ^5.4.4
+  firebase_analytics: ^11.3.3
+
+  # State management
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+
+  # Navigation
+  go_router: ^14.3.0
+
+  # Data models
+  freezed_annotation: ^2.4.4
+  json_annotation: ^4.9.0
+
+  # Charts
+  fl_chart: ^0.69.0
+
+  # File & CSV import
+  file_picker: ^8.1.2
+  csv: ^6.0.0
+
+  # Android SMS
+  permission_handler: ^11.3.1
+  telephony: ^0.2.0
+
+  # Utilities
+  intl: ^0.19.0
+  shared_preferences: ^2.3.2
+  uuid: ^4.4.2
+  google_fonts: ^6.2.1
+  cached_network_image: ^3.4.1
+  lottie: ^3.1.2
+  shimmer: ^3.0.0
+
+  # Platform detection
+  universal_io: ^2.2.2
+
+  cupertino_icons: ^1.0.8
+  http: ^1.2.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # Code generation
+  build_runner: ^2.4.12
+  freezed: ^2.5.7
+  riverpod_generator: ^2.4.3
+  json_serializable: ^6.8.0
+
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+

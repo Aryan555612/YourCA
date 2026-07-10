@@ -1,0 +1,574 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fl_chart/fl_chart.dart';
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_text_styles.dart';
+import '../../core/utils/format_utils.dart';
+import '../../core/constants/app_categories.dart';
+import '../../shared/models/models.dart';
+import '../../shared/repositories/transaction_repository.dart';
+import '../../features/auth/auth_provider.dart';
+import '../../features/transactions/transaction_list_screen.dart';
+import '../../shared/widgets/summary_card.dart';
+
+// ── Monthly summary provider ──────────────────────────────────────────────────
+
+final monthlySummaryProvider =
+    FutureProvider.autoDispose<MonthlySummary>((ref) async {
+  final userId = ref.watch(currentUserIdProvider);
+  final month = ref.watch(selectedMonthProvider);
+  if (userId == null) return MonthlySummary.empty(month);
+
+  final txs = await ref
+      .watch(transactionRepositoryProvider)
+      .fetchMonth(userId, month);
+
+  double income = 0;
+  double expense = 0;
+  final catBreakdown = <String, double>{};
+
+  for (final tx in txs) {
+    if (tx.type == TransactionType.credit) {
+      income += tx.amount;
+    } else {
+      expense += tx.amount;
+      catBreakdown[tx.category] =
+          (catBreakdown[tx.category] ?? 0) + tx.amount;
+    }
+  }
+
+  return MonthlySummary(
+    month: month,
+    totalIncome: income,
+    totalExpense: expense,
+    categoryBreakdown: catBreakdown,
+    transactionCount: txs.length,
+  );
+});
+
+final last6MonthsSummaryProvider =
+    FutureProvider.autoDispose<List<MonthlySummary>>((ref) async {
+  final userId = ref.watch(currentUserIdProvider);
+  final now = DateTime.now();
+  if (userId == null) return [];
+
+  final months = DateUtils2.last6Months(now);
+  final summaries = <MonthlySummary>[];
+
+  for (final month in months) {
+    final txs = await ref
+        .read(transactionRepositoryProvider)
+        .fetchMonth(userId, month);
+
+    double income = 0;
+    double expense = 0;
+    final catBreakdown = <String, double>{};
+
+    for (final tx in txs) {
+      if (tx.type == TransactionType.credit) {
+        income += tx.amount;
+      } else {
+        expense += tx.amount;
+        catBreakdown[tx.category] =
+            (catBreakdown[tx.category] ?? 0) + tx.amount;
+      }
+    }
+
+    summaries.add(MonthlySummary(
+      month: month,
+      totalIncome: income,
+      totalExpense: expense,
+      categoryBreakdown: catBreakdown,
+      transactionCount: txs.length,
+    ));
+  }
+
+  return summaries;
+});
+
+// ── Screen ────────────────────────────────────────────────────────────────────
+
+class DashboardScreen extends ConsumerWidget {
+  const DashboardScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final summaryAsync = ref.watch(monthlySummaryProvider);
+    final historyAsync = ref.watch(last6MonthsSummaryProvider);
+    final selectedMonth = ref.watch(selectedMonthProvider);
+    final userAsync = ref.watch(userProfileProvider);
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: CustomScrollView(
+        slivers: [
+          // ── App Bar ─────────────────────────────────────────
+          SliverAppBar(
+            expandedHeight: 120,
+            backgroundColor: AppColors.background,
+            floating: false,
+            pinned: true,
+            flexibleSpace: FlexibleSpaceBar(
+              titlePadding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              title: Row(
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      gradient: AppColors.primaryGradient,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.account_balance_wallet_rounded,
+                        color: Colors.white, size: 18),
+                  ),
+                  const SizedBox(width: 10),
+                  Text('YourCA', style: AppTextStyles.headlineMedium),
+                  const Spacer(),
+                  userAsync.when(
+                    data: (user) => Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '👋 ${user?.name?.isNotEmpty == true ? user!.name.split(' ').first : "Hello"}',
+                          style: AppTextStyles.bodyMedium
+                              .copyWith(color: AppColors.textSecondary),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          icon: const Icon(Icons.logout_rounded,
+                              color: AppColors.textSecondary, size: 18),
+                          onPressed: () async {
+                            await ref.read(authNotifierProvider.notifier).signOut();
+                          },
+                        ),
+                      ],
+                    ),
+                    loading: () => const SizedBox.shrink(),
+                    error: (_, __) => const SizedBox.shrink(),
+                  ),
+                ],
+              ),
+              background: Container(
+                decoration: const BoxDecoration(
+                    gradient: AppColors.backgroundGradient),
+              ),
+            ),
+          ),
+
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
+                // Month selector
+                _MonthRow(selectedMonth: selectedMonth, ref: ref),
+                const SizedBox(height: 16),
+
+                // Summary cards
+                summaryAsync.when(
+                  data: (s) => _SummarySection(summary: s),
+                  loading: () => const Center(
+                      child: CircularProgressIndicator()),
+                  error: (e, _) => Text('Error: $e'),
+                ),
+                const SizedBox(height: 24),
+
+                // Category pie chart
+                summaryAsync.when(
+                  data: (s) => s.categoryBreakdown.isEmpty
+                      ? const SizedBox.shrink()
+                      : _CategoryChart(summary: s),
+                  loading: () => const SizedBox.shrink(),
+                  error: (_, __) => const SizedBox.shrink(),
+                ),
+                const SizedBox(height: 24),
+
+                // 6-month bar chart
+                historyAsync.when(
+                  data: (months) =>
+                      months.isEmpty ? const SizedBox.shrink() : _BarChart(months: months),
+                  loading: () => const SizedBox.shrink(),
+                  error: (_, __) => const SizedBox.shrink(),
+                ),
+                const SizedBox(height: 100),
+              ]),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Month row ─────────────────────────────────────────────────────────────────
+
+class _MonthRow extends StatelessWidget {
+  final DateTime selectedMonth;
+  final WidgetRef ref;
+
+  const _MonthRow({required this.selectedMonth, required this.ref});
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final isCurrentMonth =
+        selectedMonth.year == now.year && selectedMonth.month == now.month;
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.chevron_left_rounded,
+              color: AppColors.textSecondary),
+          onPressed: () {
+            ref.read(selectedMonthProvider.notifier).state = DateTime(
+              selectedMonth.year,
+              selectedMonth.month - 1,
+            );
+          },
+        ),
+        Text(DateUtils2.toMonthYear(selectedMonth),
+            style: AppTextStyles.headlineMedium),
+        IconButton(
+          icon: Icon(Icons.chevron_right_rounded,
+              color: isCurrentMonth
+                  ? AppColors.textDisabled
+                  : AppColors.textSecondary),
+          onPressed: isCurrentMonth
+              ? null
+              : () {
+                  ref.read(selectedMonthProvider.notifier).state = DateTime(
+                    selectedMonth.year,
+                    selectedMonth.month + 1,
+                  );
+                },
+        ),
+      ],
+    );
+  }
+}
+
+// ── Summary section ───────────────────────────────────────────────────────────
+
+class _SummarySection extends StatelessWidget {
+  final MonthlySummary summary;
+
+  const _SummarySection({required this.summary});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // Net savings — hero card
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            gradient: summary.netSavings >= 0
+                ? AppColors.incomeGradient
+                : AppColors.expenseGradient,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Net Savings',
+                  style: AppTextStyles.bodyMedium
+                      .copyWith(color: Colors.white.withOpacity(0.8))),
+              const SizedBox(height: 4),
+              Text(
+                CurrencyUtils.format(summary.netSavings.abs()),
+                style: AppTextStyles.moneyLarge,
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Icon(
+                    summary.savingsRate >= 0.3
+                        ? Icons.trending_up_rounded
+                        : Icons.trending_down_rounded,
+                    color: Colors.white.withOpacity(0.9),
+                    size: 18,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Savings rate: ${(summary.savingsRate * 100).toStringAsFixed(1)}%',
+                    style: AppTextStyles.bodyMedium
+                        .copyWith(color: Colors.white.withOpacity(0.9)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: SummaryCard(
+                label: 'Income',
+                amount: summary.totalIncome,
+                icon: Icons.arrow_downward_rounded,
+                color: AppColors.credit,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: SummaryCard(
+                label: 'Expenses',
+                amount: summary.totalExpense,
+                icon: Icons.arrow_upward_rounded,
+                color: AppColors.debit,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+// ── Category Donut Chart ──────────────────────────────────────────────────────
+
+class _CategoryChart extends StatefulWidget {
+  final MonthlySummary summary;
+
+  const _CategoryChart({required this.summary});
+
+  @override
+  State<_CategoryChart> createState() => _CategoryChartState();
+}
+
+class _CategoryChartState extends State<_CategoryChart> {
+  int _touchedIndex = -1;
+
+  @override
+  Widget build(BuildContext context) {
+    final breakdown = widget.summary.categoryBreakdown;
+    final sorted = breakdown.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    final sections = sorted.asMap().entries.map((entry) {
+      final i = entry.key;
+      final cat = entry.value;
+      final info = AppCategories.getCategory(cat.key);
+      final isTouched = _touchedIndex == i;
+
+      return PieChartSectionData(
+        color: (info.color as Color).withOpacity(isTouched ? 1.0 : 0.8),
+        value: cat.value,
+        title: isTouched ? CurrencyUtils.formatCompact(cat.value) : '',
+        radius: isTouched ? 80 : 64,
+        titleStyle: AppTextStyles.labelSmall
+            .copyWith(color: Colors.white, fontWeight: FontWeight.w700),
+      );
+    }).toList();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Expense Breakdown', style: AppTextStyles.headlineSmall),
+            const SizedBox(height: 20),
+            SizedBox(
+              height: 200,
+              child: PieChart(
+                PieChartData(
+                  sections: sections,
+                  centerSpaceRadius: 50,
+                  sectionsSpace: 2,
+                  pieTouchData: PieTouchData(
+                    touchCallback: (event, response) {
+                      setState(() {
+                        _touchedIndex =
+                            response?.touchedSection?.touchedSectionIndex ??
+                                -1;
+                      });
+                    },
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Legend
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: sorted.take(6).map((cat) {
+                final info = AppCategories.getCategory(cat.key);
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: info.color as Color,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${info.emoji} ${cat.key}',
+                      style: AppTextStyles.labelSmall,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      CurrencyUtils.formatCompact(cat.value),
+                      style: AppTextStyles.labelSmall
+                          .copyWith(color: AppColors.textPrimary),
+                    ),
+                  ],
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── 6-Month Bar Chart ─────────────────────────────────────────────────────────
+
+class _BarChart extends StatelessWidget {
+  final List<MonthlySummary> months;
+
+  const _BarChart({required this.months});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('6-Month Trend', style: AppTextStyles.headlineSmall),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                _LegendDot(color: AppColors.credit, label: 'Income'),
+                const SizedBox(width: 16),
+                _LegendDot(color: AppColors.debit, label: 'Expense'),
+              ],
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              height: 180,
+              child: BarChart(
+                BarChartData(
+                  alignment: BarChartAlignment.spaceAround,
+                  maxY: months.fold<double>(
+                          0,
+                          (max, m) =>
+                              m.totalIncome > max ? m.totalIncome : max) *
+                      1.3,
+                  barTouchData: BarTouchData(
+                    touchTooltipData: BarTouchTooltipData(
+                      getTooltipColor: (_) => AppColors.surface,
+                      getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                        final month = months[group.x];
+                        return BarTooltipItem(
+                          '${DateUtils2.toShortMonthYear(month.month)}\n',
+                          AppTextStyles.labelSmall.copyWith(color: AppColors.textSecondary),
+                          children: [
+                            TextSpan(
+                              text: rodIndex == 0
+                                  ? CurrencyUtils.formatCompact(month.totalIncome)
+                                  : CurrencyUtils.formatCompact(month.totalExpense),
+                              style: AppTextStyles.labelMedium.copyWith(
+                                color: rodIndex == 0 ? AppColors.credit : AppColors.debit,
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                  titlesData: FlTitlesData(
+                    leftTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false)),
+                    topTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false)),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (x, meta) {
+                          final month = months[x.toInt()];
+                          return Text(
+                            DateUtils2.toShortMonthYear(month.month),
+                            style: AppTextStyles.labelSmall,
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  gridData: FlGridData(
+                    show: true,
+                    getDrawingHorizontalLine: (_) => FlLine(
+                      color: AppColors.border.withOpacity(0.5),
+                      strokeWidth: 0.5,
+                    ),
+                    drawVerticalLine: false,
+                  ),
+                  borderData: FlBorderData(show: false),
+                  barGroups: months.asMap().entries.map((entry) {
+                    final i = entry.key;
+                    final m = entry.value;
+                    return BarChartGroupData(
+                      x: i,
+                      barRods: [
+                        BarChartRodData(
+                          toY: m.totalIncome,
+                          color: AppColors.credit,
+                          width: 10,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        BarChartRodData(
+                          toY: m.totalExpense,
+                          color: AppColors.debit,
+                          width: 10,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  final Color color;
+  final String label;
+
+  const _LegendDot({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 5),
+        Text(label, style: AppTextStyles.labelSmall),
+      ],
+    );
+  }
+}

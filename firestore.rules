@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── User documents ─────────────────────────────────────────────────────
+    // Each user can only read/write their own profile.
+    match /users/{userId} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == userId;
+
+      // ── Transactions sub-collection ──────────────────────────────────────
+      // Only the owning user can read/write/delete their transactions.
+      match /transactions/{txId} {
+        allow read, write, delete: if request.auth != null
+                                   && request.auth.uid == userId;
+
+        // Validate transaction write data
+        allow create: if request.auth != null
+                      && request.auth.uid == userId
+                      && request.resource.data.keys().hasAll([
+                           'user_id', 'amount', 'type', 'category',
+                           'merchant', 'date', 'source', 'created_at'
+                         ])
+                      && request.resource.data.amount is number
+                      && request.resource.data.amount > 0
+                      && request.resource.data.type in ['debit', 'credit']
+                      && request.resource.data.source in [
+                           'sms', 'manual', 'statement_import', 'aa'
+                         ];
+      }
+
+      // ── Merchant corrections sub-collection ─────────────────────────────
+      match /merchantCorrections/{merchantKey} {
+        allow read, write, delete: if request.auth != null
+                                   && request.auth.uid == userId;
+      }
+    }
+
+    // ── Deny all other access ─────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
