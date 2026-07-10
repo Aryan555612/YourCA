@@ -38,21 +38,34 @@ jobs:
           rm -rf .gradle
           ./gradlew clean --no-daemon || true
 
-      # ── Verify keystore is present in the repository ───────────────────────────
-      - name: Verify Keystore File
+      # ── Decode the permanent keystore from GitHub Secrets ─────────────────────
+      - name: Decode Release Keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          if [ ! -f "android/app/yourca-release.jks" ]; then
-            echo "::error::Release keystore file is missing at android/app/yourca-release.jks!"
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::GitHub secret KEYSTORE_BASE64 is empty or missing!"
             exit 1
           fi
-          echo "Keystore file detected successfully."
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/yourca-release.jks
+          echo "Keystore decoded successfully"
 
       # ── Build signed release APK (for sharing via WhatsApp) ───────────────────
       - name: Build signed release APK
+        env:
+          ANDROID_KEYSTORE_PATH: "yourca-release.jks"
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: flutter build apk --release
 
       # ── Build signed AAB (for future Play Store use) ───────────────────────────
       - name: Build signed App Bundle (AAB)
+        env:
+          ANDROID_KEYSTORE_PATH: "yourca-release.jks"
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: flutter build appbundle --release
 
       # ── Upload APK (WhatsApp-sharable) ────────────────────────────────────────

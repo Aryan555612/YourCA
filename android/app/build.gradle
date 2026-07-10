@@ -37,11 +37,11 @@ if (keystorePropertiesFile.exists()) {
 }
 
 // Support loading from environment variables directly for CI/CD environments
-def keyStoreFilePath = keystoreProperties.getProperty('storeFile') ?: (System.getenv('ANDROID_KEYSTORE_PATH') ?: 'yourca-release.jks')
+def keyStoreFilePath = keystoreProperties.getProperty('storeFile') ?: System.getenv('ANDROID_KEYSTORE_PATH')
 def keyStoreFile = keyStoreFilePath ? file(keyStoreFilePath) : null
-def keyStorePassword = keystoreProperties.getProperty('storePassword') ?: (System.getenv('ANDROID_KEYSTORE_PASSWORD') ?: 'YourCA@2024#Secure')
-def keyAliasName = keystoreProperties.getProperty('keyAlias') ?: (System.getenv('ANDROID_KEY_ALIAS') ?: 'yourcakey')
-def keyPasswordValue = keystoreProperties.getProperty('keyPassword') ?: (System.getenv('ANDROID_KEY_PASSWORD') ?: 'YourCA@2024#Secure')
+def keyStorePassword = keystoreProperties.getProperty('storePassword') ?: System.getenv('ANDROID_KEYSTORE_PASSWORD')
+def keyAliasName = keystoreProperties.getProperty('keyAlias') ?: System.getenv('ANDROID_KEY_ALIAS')
+def keyPasswordValue = keystoreProperties.getProperty('keyPassword') ?: System.getenv('ANDROID_KEY_PASSWORD')
 
 android {
     namespace "com.yourca.app"
