@@ -1,69 +1,141 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sqflite/sqflite.dart';
+import '../../core/services/database_helper.dart';
 import '../models/models.dart';
 
 final userRepositoryProvider = Provider<UserRepository>((ref) {
-  return UserRepository(FirebaseFirestore.instance);
+  return UserRepository();
 });
 
 class UserRepository {
-  final FirebaseFirestore _firestore;
+  UserRepository();
 
-  UserRepository(this._firestore);
+  Future<Database> get _db => DatabaseHelper.instance.database;
 
-  DocumentReference<Map<String, dynamic>> _userDoc(String userId) =>
-      _firestore.collection('users').doc(userId);
+  UserProfile _fromRow(Map<String, dynamic> row) {
+    return UserProfile(
+      id: row['id'] as String,
+      name: row['name'] as String? ?? '',
+      phoneNumber: row['phone_number'] as String? ?? '',
+      createdAt: DateTime.parse(row['created_at'] as String),
+      monthlyIncomeSeed: (row['monthly_income_seed'] as num?)?.toDouble() ?? 0.0,
+      savingsTargetRate: (row['savings_target_rate'] as num?)?.toDouble() ?? 0.30,
+    );
+  }
+
+  Map<String, dynamic> _toRow(UserProfile profile) {
+    return {
+      'id': profile.id,
+      'name': profile.name,
+      'phone_number': profile.phoneNumber,
+      'created_at': profile.createdAt.toIso8601String(),
+      'monthly_income_seed': profile.monthlyIncomeSeed,
+      'savings_target_rate': profile.savingsTargetRate,
+    };
+  }
 
   Future<UserProfile?> fetchProfile(String userId) async {
-    final doc = await _userDoc(userId).get();
-    if (!doc.exists) return null;
-    return UserProfile.fromFirestore(doc.data()!, doc.id);
+    final db = await _db;
+    final maps = await db.query(
+      'user_profiles',
+      where: 'id = ?',
+      whereArgs: [userId],
+    );
+    if (maps.isEmpty) return null;
+    return _fromRow(maps.first);
   }
 
   Stream<UserProfile?> watchProfile(String userId) {
-    return _userDoc(userId).snapshots().map((doc) {
-      if (!doc.exists) return null;
-      return UserProfile.fromFirestore(doc.data()!, doc.id);
+    final controller = StreamController<UserProfile?>();
+
+    Future<void> _fetch() async {
+      try {
+        final profile = await fetchProfile(userId);
+        if (!controller.isClosed) controller.add(profile);
+      } catch (e) {
+        if (!controller.isClosed) controller.addError(e);
+      }
+    }
+
+    _fetch();
+
+    final sub = DatabaseHelper.instance.changeStream.listen((table) {
+      if (table == 'user_profiles') {
+        _fetch();
+      }
     });
+
+    controller.onCancel = () {
+      sub.cancel();
+      controller.close();
+    };
+
+    return controller.stream;
   }
 
   Future<void> createProfile(UserProfile profile) async {
-    await _userDoc(profile.id).set(profile.toFirestore());
+    final db = await _db;
+    await db.insert(
+      'user_profiles',
+      _toRow(profile),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+    DatabaseHelper.instance.notifyChange('user_profiles');
   }
 
   Future<void> updateProfile(UserProfile profile) async {
-    await _userDoc(profile.id).update(profile.toFirestore());
+    final db = await _db;
+    await db.update(
+      'user_profiles',
+      _toRow(profile),
+      where: 'id = ?',
+      whereArgs: [profile.id],
+    );
+    DatabaseHelper.instance.notifyChange('user_profiles');
   }
 
   // ── Merchant correction lookup ─────────────────────────────────────────
-  CollectionReference<Map<String, dynamic>> _correctionsCol(String userId) =>
-      _userDoc(userId).collection('merchantCorrections');
-
-  Future<String?> fetchMerchantCorrection(
-      String userId, String merchant) async {
-    final key = merchant.toLowerCase().replaceAll(RegExp(r'\s+'), '_');
-    final doc = await _correctionsCol(userId).doc(key).get();
-    if (!doc.exists) return null;
-    return doc.data()?['category'] as String?;
+  Future<String?> fetchMerchantCorrection(String userId, String merchant) async {
+    final db = await _db;
+    final maps = await db.query(
+      'merchant_corrections',
+      where: 'user_id = ? AND merchant = ?',
+      whereArgs: [userId, merchant.toLowerCase().trim()],
+    );
+    if (maps.isEmpty) return null;
+    return maps.first['category'] as String?;
   }
 
   Future<void> saveMerchantCorrection(
       String userId, String merchant, String category) async {
-    final key = merchant.toLowerCase().replaceAll(RegExp(r'\s+'), '_');
-    await _correctionsCol(userId).doc(key).set({
-      'merchant': merchant,
-      'category': category,
-      'updated_at': DateTime.now().toIso8601String(),
-    });
+    final db = await _db;
+    final id = '${userId}_${merchant.toLowerCase().replaceAll(RegExp(r'\s+'), '_')}';
+    await db.insert(
+      'merchant_corrections',
+      {
+        'id': id,
+        'user_id': userId,
+        'merchant': merchant.toLowerCase().trim(),
+        'category': category,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+    DatabaseHelper.instance.notifyChange('merchant_corrections');
   }
 
   Future<Map<String, String>> fetchAllCorrections(String userId) async {
-    final snap = await _correctionsCol(userId).get();
+    final db = await _db;
+    final maps = await db.query(
+      'merchant_corrections',
+      where: 'user_id = ?',
+      whereArgs: [userId],
+    );
     final result = <String, String>{};
-    for (final doc in snap.docs) {
-      final merchant = doc.data()['merchant'] as String? ?? doc.id;
-      final category = doc.data()['category'] as String? ?? 'Other';
-      result[merchant.toLowerCase()] = category;
+    for (final row in maps) {
+      final merchant = row['merchant'] as String;
+      final category = row['category'] as String;
+      result[merchant.toLowerCase().trim()] = category;
     }
     return result;
   }

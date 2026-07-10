@@ -1,30 +1,57 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/constants/app_categories.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/services/database_helper.dart';
 import '../auth/auth_provider.dart';
 
 final customCategoriesProvider = StreamProvider<List<CategoryInfo>>((ref) {
   final userId = ref.watch(currentUserIdProvider);
   if (userId == null) return Stream.value([]);
 
-  return FirebaseFirestore.instance
-      .collection('users')
-      .doc(userId)
-      .collection('custom_categories')
-      .snapshots()
-      .map((snapshot) {
-    return snapshot.docs.map((doc) {
-      final data = doc.data();
-      return CategoryInfo(
-        name: data['name'] ?? doc.id,
-        emoji: data['emoji'] ?? '📦',
-        color: AppColors.catOther,
-        keywords: List<String>.from(data['keywords'] ?? []),
+  final controller = StreamController<List<CategoryInfo>>();
+
+  Future<void> _fetch() async {
+    try {
+      final db = await DatabaseHelper.instance.database;
+      final maps = await db.query(
+        'custom_categories',
+        where: 'user_id = ?',
+        whereArgs: [userId],
+        orderBy: 'created_at DESC',
       );
-    }).toList();
+      final list = maps.map((row) {
+        final name = row['name'] as String;
+        final emoji = row['emoji'] as String;
+        return CategoryInfo(
+          name: name,
+          emoji: emoji,
+          color: AppColors.catOther,
+          keywords: [],
+        );
+      }).toList();
+
+      if (!controller.isClosed) controller.add(list);
+    } catch (e) {
+      if (!controller.isClosed) controller.addError(e);
+    }
+  }
+
+  _fetch();
+
+  final sub = DatabaseHelper.instance.changeStream.listen((table) {
+    if (table == 'custom_categories') {
+      _fetch();
+    }
   });
+
+  controller.onCancel = () {
+    sub.cancel();
+    controller.close();
+  };
+
+  return controller.stream;
 });
 
 final pinnedCategoriesProvider =

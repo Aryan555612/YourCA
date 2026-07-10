@@ -1,4 +1,5 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:sqflite/sqflite.dart';
+import '../../core/services/database_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_colors.dart';
@@ -71,16 +72,18 @@ class CategoriesScreen extends ConsumerWidget {
               final userId = ref.read(currentUserIdProvider);
 
               if (userId != null) {
-                await FirebaseFirestore.instance
-                    .collection('users')
-                    .doc(userId)
-                    .collection('custom_categories')
-                    .doc(name)
-                    .set({
-                  'name': name,
-                  'emoji': emoji,
-                  'keywords': [name.toLowerCase()],
-                });
+                final db = await DatabaseHelper.instance.database;
+                await db.insert(
+                  'custom_categories',
+                  {
+                    'name': name,
+                    'emoji': emoji,
+                    'user_id': userId,
+                    'created_at': DateTime.now().toIso8601String(),
+                  },
+                  conflictAlgorithm: ConflictAlgorithm.replace,
+                );
+                DatabaseHelper.instance.notifyChange('custom_categories');
               }
 
               if (context.mounted) {
@@ -115,27 +118,25 @@ class CategoriesScreen extends ConsumerWidget {
             onPressed: () async {
               final userId = ref.read(currentUserIdProvider);
               if (userId != null) {
-                // Delete custom category document
-                await FirebaseFirestore.instance
-                    .collection('users')
-                    .doc(userId)
-                    .collection('custom_categories')
-                    .doc(catName)
-                    .delete();
+                final db = await DatabaseHelper.instance.database;
+
+                // Delete custom category row
+                await db.delete(
+                  'custom_categories',
+                  where: 'name = ? AND user_id = ?',
+                  whereArgs: [catName, userId],
+                );
 
                 // Re-categorize transactions under this category to 'Other'
-                final txQuery = await FirebaseFirestore.instance
-                    .collection('users')
-                    .doc(userId)
-                    .collection('transactions')
-                    .where('category', isEqualTo: catName)
-                    .get();
+                await db.update(
+                  'transactions',
+                  {'category': 'Other'},
+                  where: 'category = ? AND user_id = ?',
+                  whereArgs: [catName, userId],
+                );
 
-                final batch = FirebaseFirestore.instance.batch();
-                for (final doc in txQuery.docs) {
-                  batch.update(doc.reference, {'category': 'Other'});
-                }
-                await batch.commit();
+                DatabaseHelper.instance.notifyChange('custom_categories');
+                DatabaseHelper.instance.notifyChange('transactions');
               }
 
               if (context.mounted) {

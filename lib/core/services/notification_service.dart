@@ -1,8 +1,8 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'database_helper.dart';
 
 @pragma('vm:entry-point')
 void notificationTapBackground(NotificationResponse notificationResponse) async {
@@ -23,15 +23,17 @@ void notificationTapBackground(NotificationResponse notificationResponse) async 
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    // Update transaction category directly in Firestore
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .collection('transactions')
-        .doc(txId)
-        .update({'category': category});
+    // Update transaction category directly in SQLite local database
+    final db = await DatabaseHelper.instance.database;
+    await db.update(
+      'transactions',
+      {'category': category},
+      where: 'id = ? AND user_id = ?',
+      whereArgs: [txId, user.uid],
+    );
+    DatabaseHelper.instance.notifyChange('transactions');
 
-    debugPrint('YourCA Notification Callback: updated tx $txId to $category');
+    debugPrint('YourCA Notification Callback: updated tx $txId to $category in SQLite');
   } catch (e) {
     debugPrint('YourCA Background Notification Action Error: $e');
   }

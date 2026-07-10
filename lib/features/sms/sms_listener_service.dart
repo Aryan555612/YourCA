@@ -7,7 +7,8 @@ import '../../shared/repositories/transaction_repository.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../features/categories/categorization_service.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
+import 'package:sqflite/sqflite.dart' hide Transaction;
+import '../../core/services/database_helper.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../../core/services/notification_service.dart';
@@ -135,13 +136,27 @@ Future<void> backgroundSmsHandler(SmsMessage message) async {
       bankReference: result.reference,
     );
 
-    // Save directly to Firestore inside the background isolate
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(userId)
-        .collection('transactions')
-        .doc(tx.id)
-        .set(tx.toFirestore());
+    // Save directly to SQLite inside the background isolate
+    final db = await DatabaseHelper.instance.database;
+    await db.insert(
+      'transactions',
+      {
+        'id': tx.id,
+        'user_id': userId,
+        'amount': tx.amount,
+        'type': tx.type.name,
+        'category': tx.category,
+        'merchant': tx.merchant,
+        'date': tx.date.toIso8601String(),
+        'source': tx.source.name,
+        'raw_text': tx.rawText,
+        'created_at': tx.createdAt.toIso8601String(),
+        'note': tx.note,
+        'bank_reference': tx.bankReference,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+    DatabaseHelper.instance.notifyChange('transactions');
 
     // Trigger local notification with quick category choice buttons
     if (category == 'Other' && tx.type == TransactionType.debit) {
