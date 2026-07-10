@@ -16,6 +16,11 @@ public final class GeneratedPluginRegistrant {
   private static final String TAG = "GeneratedPluginRegistrant";
   public static void registerWith(@NonNull FlutterEngine flutterEngine) {
     try {
+      flutterEngine.getPlugins().add(new com.shounakmulay.telephony.TelephonyPlugin());
+    } catch (Exception e) {
+      Log.e(TAG, "Error registering plugin another_telephony, com.shounakmulay.telephony.TelephonyPlugin", e);
+    }
+    try {
       flutterEngine.getPlugins().add(new io.flutter.plugins.firebase.firestore.FlutterFirebaseFirestorePlugin());
     } catch (Exception e) {
       Log.e(TAG, "Error registering plugin cloud_firestore, io.flutter.plugins.firebase.firestore.FlutterFirebaseFirestorePlugin", e);
@@ -69,11 +74,6 @@ public final class GeneratedPluginRegistrant {
       flutterEngine.getPlugins().add(new com.tekartik.sqflite.SqflitePlugin());
     } catch (Exception e) {
       Log.e(TAG, "Error registering plugin sqflite_android, com.tekartik.sqflite.SqflitePlugin", e);
-    }
-    try {
-      flutterEngine.getPlugins().add(new com.shounakmulay.telephony.TelephonyPlugin());
-    } catch (Exception e) {
-      Log.e(TAG, "Error registering plugin telephony, com.shounakmulay.telephony.TelephonyPlugin", e);
     }
   }
 }
