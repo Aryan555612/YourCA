@@ -54,7 +54,7 @@ class NotificationService {
     );
 
     await _localNotificationsPlugin.initialize(
-      settings: initializationSettingsUnified,
+      initializationSettingsUnified,
       onDidReceiveNotificationResponse: (details) {
         // Foreground tap
       },
@@ -106,10 +106,10 @@ class NotificationService {
     final notificationDetails = NotificationDetails(android: androidDetails);
 
     await _localNotificationsPlugin.show(
-      id: txId.hashCode,
-      title: 'Categorize Payment of \u20B9${amount.toStringAsFixed(0)}',
-      body: 'Sent to "$merchant". What was this for?',
-      notificationDetails: notificationDetails,
+      txId.hashCode,
+      'Categorize Payment of \u20B9${amount.toStringAsFixed(0)}',
+      'Sent to "$merchant". What was this for?',
+      notificationDetails,
       payload: txId,
     );
   }
