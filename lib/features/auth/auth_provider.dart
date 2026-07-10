@@ -98,30 +98,29 @@ class AuthNotifier extends AsyncNotifier<void> {
   }) async {
     state = const AsyncLoading();
     try {
-      final doc = await FirebaseFirestore.instance.collection('otps').doc(email).get();
-      if (!doc.exists) {
-        throw Exception('No OTP request found for this email. Send a new one.');
+      // 1. Attempt to write to the verification subcollection.
+      // Firestore Security Rules will reject this write (permission-denied)
+      // if the code is wrong OR if the OTP has expired.
+      try {
+        await FirebaseFirestore.instance
+            .collection('otps')
+            .doc(email)
+            .collection('attempts')
+            .doc('verify')
+            .set({
+          'enteredCode': otp,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+      } catch (e) {
+        // If write fails, the code is incorrect or has expired
+        throw Exception('Invalid or expired verification code. Please try again.');
       }
 
-      final data = doc.data()!;
-      final code = data['code'] as String?;
-      final expiresAtStr = data['expires_at'] as String?;
-
-      if (code == null || code != otp) {
-        throw Exception('Invalid verification code. Please try again.');
-      }
-
-      if (expiresAtStr != null) {
-        final expiresAt = DateTime.parse(expiresAtStr);
-        if (DateTime.now().isAfter(expiresAt)) {
-          throw Exception('Verification code has expired. Request a new one.');
-        }
-      }
-
-      // Log in anonymously (works instantly on Spark plan with no card!)
+      // If we reach here, the write succeeded, meaning the code was correct!
+      // 2. Log in anonymously (works instantly on Spark plan with no card!)
       final credential = await _auth.signInAnonymously();
 
-      // Ensure user profile in Firestore
+      // 3. Ensure user profile in Firestore
       final existingProfile = await _userRepo.fetchProfile(credential.user!.uid);
       if (existingProfile == null) {
         await _userRepo.createProfile(UserProfile(
@@ -132,8 +131,19 @@ class AuthNotifier extends AsyncNotifier<void> {
         ));
       }
 
-      // Clean up verification document
-      await FirebaseFirestore.instance.collection('otps').doc(email).delete();
+      // 4. Clean up both the verification attempt and the parent OTP document
+      // (Since we are now logged in, we have the 'request.auth != null' permission to delete them)
+      try {
+        await FirebaseFirestore.instance
+            .collection('otps')
+            .doc(email)
+            .collection('attempts')
+            .doc('verify')
+            .delete();
+        await FirebaseFirestore.instance.collection('otps').doc(email).delete();
+      } catch (e) {
+        // Safe to ignore cleanup failures (security rules are already satisfied)
+      }
 
       state = const AsyncData(null);
     } catch (e, st) {
