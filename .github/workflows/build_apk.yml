@@ -38,54 +38,21 @@ jobs:
           rm -rf .gradle
           ./gradlew clean --no-daemon || true
 
-      # ── Decode the permanent keystore from GitHub Secrets ─────────────────────
-      # Go to: GitHub repo → Settings → Secrets → Actions → New repository secret
-      # Add these 4 secrets:
-      #   KEYSTORE_BASE64       → base64 of yourca-release.jks (see android/app/yourca-release.jks.b64.txt)
-      #   KEYSTORE_PASSWORD     → YourCA@2024#Secure
-      #   KEY_ALIAS             → yourcakey
-      #   KEY_PASSWORD          → YourCA@2024#Secure
-      - name: Decode Release Keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+      # ── Verify keystore is present in the repository ───────────────────────────
+      - name: Verify Keystore File
         run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::error::GitHub secret KEYSTORE_BASE64 is empty or missing!"
+          if [ ! -f "android/app/yourca-release.jks" ]; then
+            echo "::error::Release keystore file is missing at android/app/yourca-release.jks!"
             exit 1
           fi
-          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/yourca-release.jks
-          echo "Keystore decoded successfully"
-
-      - name: Verify Keystore Integrity
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-        run: |
-          if [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ]; then
-            echo "::error::One or more GitHub secrets (KEYSTORE_PASSWORD, KEY_ALIAS) are missing!"
-            exit 1
-          fi
-          keytool -list -v -keystore android/app/yourca-release.jks -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" || {
-            echo "::error::Failed to read the keystore! Either the keystore file is corrupt (bad base64 decoding), or the password/alias secret is incorrect."
-            exit 1
-          }
+          echo "Keystore file detected successfully."
 
       # ── Build signed release APK (for sharing via WhatsApp) ───────────────────
       - name: Build signed release APK
-        env:
-          ANDROID_KEYSTORE_PATH: "yourca-release.jks"
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: flutter build apk --release
 
       # ── Build signed AAB (for future Play Store use) ───────────────────────────
       - name: Build signed App Bundle (AAB)
-        env:
-          ANDROID_KEYSTORE_PATH: "yourca-release.jks"
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: flutter build appbundle --release
 
       # ── Upload APK (WhatsApp-sharable) ────────────────────────────────────────
