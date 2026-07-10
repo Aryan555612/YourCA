@@ -70,13 +70,26 @@ class BankSmsParser {
     caseSensitive: false,
   );
 
-  // ── Merchant/UPI patterns ───────────────────────────────────────────────
-  static final _merchantPatterns = [
-    RegExp(r'(?:at|to|from|by|merchant|payee)[:\s]+([A-Za-z0-9\s\.\-\_]+?)(?:\s+on|\s+ref|\s+via|\s*\.|\s*,|$)',
+  // ── HIGH PRIORITY: UPI To:NAME/From: pattern (most Indian banks) ─────────
+  // Matches: UPI/REF/To:PATEL ARYAN LALJIBHAI/From:PAT
+  // For DEBITS → extract the "To:" name (who you paid)
+  // For CREDITS → extract the "From:" name (who paid you)
+  static final _upiToPattern = RegExp(
+    r'(?:UPI[/\s]*\d+[/\s]*)?To[:\s]+([A-Za-z][A-Za-z\s]{1,50}?)(?:\s*/\s*From|\s*\.\s|\s*Clear|\s*$)',
+    caseSensitive: false,
+  );
+  static final _upiFromPattern = RegExp(
+    r'From[:\s]+([A-Za-z][A-Za-z\s\-\.]{2,50}?)(?:\s*/|\s+Ref|\s+on\b|\s*\.\s|\s*$)',
+    caseSensitive: false,
+  );
+
+  // ── MEDIUM PRIORITY: Generic merchant patterns ───────────────────────────
+  static final _merchantPatternsGeneric = [
+    RegExp(r'(?:trf to|transfer to|paid to|sent to)[:\s]+([A-Za-z0-9\s\.\-\_]+?)(?:\s+ref|\s+on|\s*\.|,|$)',
         caseSensitive: false),
-    RegExp(r'VPA\s+([A-Za-z0-9@\.\-\_]+)', caseSensitive: false),
-    RegExp(r'UPI[:\s]+([A-Za-z0-9@\.\-\_]+)', caseSensitive: false),
-    RegExp(r'trf to\s+([A-Za-z\s]+?)(?:\s+ref|\s+on|\s*\.)', caseSensitive: false),
+    RegExp(r'VPA[:\s]+([A-Za-z0-9@\.\-\_]+)', caseSensitive: false),
+    RegExp(r'(?:at|merchant)[:\s]+([A-Za-z0-9\s\.\-\_]+?)(?:\s+on|\s+ref|\s*\.|,|$)',
+        caseSensitive: false),
   ];
 
   // ── Reference number patterns ───────────────────────────────────────────
@@ -117,7 +130,7 @@ class BankSmsParser {
     // Skip if neither debit nor credit keyword found
     if (!isDebit && !isCredit) return null;
 
-    final merchant = _extractMerchant(body);
+    final merchant = _extractMerchant(body, isDebit: isDebit);
     final reference = _extractReference(body);
     final date = _extractDate(body);
 
@@ -189,17 +202,93 @@ class BankSmsParser {
     return null;
   }
 
-  String? _extractMerchant(String body) {
-    for (final pattern in _merchantPatterns) {
+  String? _extractMerchant(String body, {bool isDebit = true}) {
+    // ── STEP 1: High-priority UPI To:/From: pattern ──────────────────────
+    // Most Indian bank SMS: "UPI/REF/To:RECIPIENT NAME/From:BANK_SHORT"
+    // For debits → who YOU paid = "To:" field
+    // For credits → who PAID you = "From:" field
+    if (isDebit) {
+      final toMatch = _upiToPattern.firstMatch(body);
+      if (toMatch != null) {
+        final name = toMatch.group(1)?.trim();
+        if (name != null && name.length > 2 && !_isNoise(name)) {
+          return _cleanMerchantName(name);
+        }
+      }
+    } else {
+      final fromMatch = _upiFromPattern.firstMatch(body);
+      if (fromMatch != null) {
+        final name = fromMatch.group(1)?.trim();
+        if (name != null && name.length > 2 && !_isNoise(name)) {
+          return _cleanMerchantName(name);
+        }
+      }
+    }
+
+    // ── STEP 2: Also try the other direction as fallback ─────────────────
+    // (e.g. some banks flip the To/From order)
+    if (isDebit) {
+      final fromMatch = _upiFromPattern.firstMatch(body);
+      if (fromMatch != null) {
+        final name = fromMatch.group(1)?.trim();
+        // Only use From: for debit if it looks like a real name (not a bank code)
+        if (name != null && name.length > 4 && !_isNoise(name) && !_looksLikeBankCode(name)) {
+          return _cleanMerchantName(name);
+        }
+      }
+    } else {
+      final toMatch = _upiToPattern.firstMatch(body);
+      if (toMatch != null) {
+        final name = toMatch.group(1)?.trim();
+        if (name != null && name.length > 2 && !_isNoise(name)) {
+          return _cleanMerchantName(name);
+        }
+      }
+    }
+
+    // ── STEP 3: Generic patterns ──────────────────────────────────────────
+    for (final pattern in _merchantPatternsGeneric) {
       final match = pattern.firstMatch(body);
       if (match != null) {
         final merchant = match.group(1)?.trim();
-        if (merchant != null && merchant.isNotEmpty && merchant.length > 2) {
-          return merchant;
+        if (merchant != null && merchant.isNotEmpty && merchant.length > 2 && !_isNoise(merchant)) {
+          return _cleanMerchantName(merchant);
         }
       }
     }
     return null;
+  }
+
+  /// Returns true if the extracted name is noise/generic (not a real merchant).
+  bool _isNoise(String name) {
+    final lower = name.toLowerCase().trim();
+    const noiseWords = {
+      'your', 'the', 'on', 'at', 'of', 'for', 'a', 'an', 'is', 'are',
+      'bank', 'ref', 'no', 'transaction', 'amount', 'balance', 'account',
+      'upi', 'neft', 'imps', 'rtgs', 'inr', 'rs', 'clear', 'info',
+    };
+    return noiseWords.contains(lower) || lower.length <= 2;
+  }
+
+  /// Returns true if name looks like a bank short code (e.g. "PAT", "SBI", "HDFC")
+  bool _looksLikeBankCode(String name) {
+    // Short all-caps codes like "PAT", "HDFC", "SBI" are bank codes
+    final cleaned = name.trim();
+    if (cleaned.length <= 5 && cleaned == cleaned.toUpperCase()) return true;
+    return false;
+  }
+
+  /// Clean up extracted merchant name — trim, title-case, remove trailing dots.
+  String _cleanMerchantName(String name) {
+    final cleaned = name.trim().replaceAll(RegExp(r'\s+'), ' ').replaceAll(RegExp(r'[\./]+$'), '').trim();
+    // Title-case if all upper
+    if (cleaned == cleaned.toUpperCase() && cleaned.length > 3) {
+      return cleaned.split(' ').map((w) {
+        if (w.isEmpty) return w;
+        return w[0].toUpperCase() + w.substring(1).toLowerCase();
+      }).join(' ');
+    }
+    return cleaned;
   }
 
   String? _extractReference(String body) {
