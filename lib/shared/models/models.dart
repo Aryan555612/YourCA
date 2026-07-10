@@ -208,3 +208,81 @@ class SavingsSuggestion {
     required this.emoji,
   });
 }
+
+// ─── Savings Plan Model ─────────────────────────────────────────────────────
+
+class SavingsPlan {
+  final String id;
+  final String userId;
+  final String title;
+  final String description;
+  final double targetAmount;
+  final double savedAmount;
+  final DateTime targetDate;
+  final bool isCustom;
+  final DateTime createdAt;
+
+  const SavingsPlan({
+    required this.id,
+    required this.userId,
+    required this.title,
+    required this.description,
+    required this.targetAmount,
+    required this.savedAmount,
+    required this.targetDate,
+    required this.isCustom,
+    required this.createdAt,
+  });
+
+  SavingsPlan copyWith({
+    String? id,
+    String? userId,
+    String? title,
+    String? description,
+    double? targetAmount,
+    double? savedAmount,
+    DateTime? targetDate,
+    bool? isCustom,
+    DateTime? createdAt,
+  }) {
+    return SavingsPlan(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      targetAmount: targetAmount ?? this.targetAmount,
+      savedAmount: savedAmount ?? this.savedAmount,
+      targetDate: targetDate ?? this.targetDate,
+      isCustom: isCustom ?? this.isCustom,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
+  Map<String, dynamic> toFirestore() {
+    return {
+      'user_id': userId,
+      'title': title,
+      'description': description,
+      'target_amount': targetAmount,
+      'saved_amount': savedAmount,
+      'target_date': targetDate.toIso8601String(),
+      'is_custom': isCustom,
+      'created_at': createdAt.toIso8601String(),
+    };
+  }
+
+  factory SavingsPlan.fromFirestore(Map<String, dynamic> data, String id) {
+    return SavingsPlan(
+      id: id,
+      userId: data['user_id'] ?? '',
+      title: data['title'] ?? '',
+      description: data['description'] ?? '',
+      targetAmount: (data['target_amount'] as num?)?.toDouble() ?? 0.0,
+      savedAmount: (data['saved_amount'] as num?)?.toDouble() ?? 0.0,
+      targetDate: DateTime.parse(data['target_date'] ?? DateTime.now().toIso8601String()),
+      isCustom: data['is_custom'] ?? false,
+      createdAt: DateTime.parse(data['created_at'] ?? DateTime.now().toIso8601String()),
+    );
+  }
+}
+

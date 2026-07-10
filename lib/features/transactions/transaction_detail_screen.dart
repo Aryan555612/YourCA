@@ -5,6 +5,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/format_utils.dart';
 import '../../core/constants/app_categories.dart';
+import '../categories/categories_provider.dart';
 import '../../shared/models/models.dart';
 import '../../shared/repositories/transaction_repository.dart';
 import '../../shared/repositories/user_repository.dart';
@@ -240,7 +241,7 @@ class _TxDetailBodyState extends ConsumerState<_TxDetailBody> {
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: AppCategories.all.map((cat) {
+          children: ref.watch(allCategoriesProvider).map((cat) {
             final selected = _selectedCategory == cat.name;
             return GestureDetector(
               onTap: () => setState(() => _selectedCategory = cat.name),

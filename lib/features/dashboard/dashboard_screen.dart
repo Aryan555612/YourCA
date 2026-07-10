@@ -16,6 +16,7 @@ import '../../features/sms/sms_permission_screen.dart';
 import 'package:go_router/go_router.dart';
 import '../../features/sms/sms_listener_service.dart';
 import '../../shared/widgets/summary_card.dart';
+import '../categories/categories_provider.dart';
 
 // â”€â”€ Monthly summary provider â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -1003,7 +1004,7 @@ class _QuickCategorizationCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final categories = AppCategories.all;
+    final categories = ref.watch(allCategoriesProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Card(

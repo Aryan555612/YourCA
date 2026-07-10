@@ -8,7 +8,7 @@ import '../../shared/repositories/transaction_repository.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../features/categories/categorization_service.dart';
 import '../../core/utils/format_utils.dart';
-import '../../core/constants/app_categories.dart';
+import '../categories/categories_provider.dart';
 import 'package:uuid/uuid.dart';
 
 class AddTransactionScreen extends ConsumerStatefulWidget {
@@ -275,6 +275,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen>
   }
 
   Widget _buildCategoryPicker() {
+    final categories = ref.watch(allCategoriesProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -284,7 +285,7 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen>
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: AppCategories.all
+          children: categories
               .where((c) =>
                   _selectedType == TransactionType.credit ||
                   c.name != 'Income')

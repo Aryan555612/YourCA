@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
 import 'firebase_options.dart';
+import 'core/services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -14,6 +15,9 @@ void main() async {
   } catch (e) {
     // Default app already exists (common during web hot restarts) - ignore
   }
+
+  // Initialize notifications
+  await NotificationService.instance.initialize();
 
   // To test with Firebase Emulators locally, uncomment and configure:
   // const host = '10.0.2.2'; // Android emulator → localhost

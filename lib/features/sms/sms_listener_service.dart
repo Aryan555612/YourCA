@@ -10,6 +10,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../../core/services/notification_service.dart';
 import 'bank_sms_parser.dart';
 
 /// Provider that starts the background SMS listener on Android.
@@ -83,6 +84,15 @@ class SmsListenerService {
     );
 
     await _ref.read(transactionRepositoryProvider).add(tx);
+
+    // Trigger local notification with quick category choice buttons
+    if (category == 'Other' && tx.type == TransactionType.debit) {
+      await NotificationService.instance.showCategorizationNotification(
+        txId: tx.id,
+        amount: tx.amount,
+        merchant: tx.merchant,
+      );
+    }
   }
 }
 
@@ -132,6 +142,16 @@ Future<void> backgroundSmsHandler(SmsMessage message) async {
         .collection('transactions')
         .doc(tx.id)
         .set(tx.toFirestore());
+
+    // Trigger local notification with quick category choice buttons
+    if (category == 'Other' && tx.type == TransactionType.debit) {
+      await NotificationService.instance.initialize();
+      await NotificationService.instance.showCategorizationNotification(
+        txId: tx.id,
+        amount: tx.amount,
+        merchant: tx.merchant,
+      );
+    }
   } catch (e) {
     debugPrint('YourCA Background SMS Parse Error: $e');
   }
