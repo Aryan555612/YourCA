@@ -24,17 +24,22 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.6'
+          flutter-version: '3.27.4'
           channel: 'stable'
+          cache: true
 
       - name: Install dependencies
         run: flutter pub get
 
       - name: Clean build caches
-        run: flutter clean
+        run: |
+          flutter clean
+          cd android
+          rm -rf .gradle
+          ./gradlew clean --no-daemon || true
 
       - name: Build release APK
-        run: flutter build apk --release --verbose
+        run: flutter build apk --release
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
