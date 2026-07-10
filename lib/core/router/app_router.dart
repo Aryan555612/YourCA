@@ -8,6 +8,7 @@ import '../../features/transactions/transaction_list_screen.dart';
 import '../../features/transactions/transaction_detail_screen.dart';
 import '../../features/transactions/csv_import_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
+import '../../shared/models/models.dart';
 import '../../features/dashboard/merchant_breakdown_screen.dart';
 import '../../features/savings/savings_screen.dart';
 import '../../features/categories/categories_screen.dart';
