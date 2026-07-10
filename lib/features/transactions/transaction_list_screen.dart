@@ -82,36 +82,55 @@ class TransactionListScreen extends ConsumerWidget {
                         .toList();
 
                 if (filtered.isEmpty) {
-                  return _EmptyState(hasFilter: categoryFilter != null);
+                  return RefreshIndicator(
+                    onRefresh: () async {
+                      ref.invalidate(transactionsStreamProvider);
+                    },
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: [
+                        SizedBox(
+                          height: MediaQuery.of(context).size.height * 0.6,
+                          child: _EmptyState(hasFilter: categoryFilter != null),
+                        ),
+                      ],
+                    ),
+                  );
                 }
 
-                return ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                  itemCount: filtered.length,
-                  itemBuilder: (context, i) {
-                    final tx = filtered[i];
-                    final showDateHeader = i == 0 ||
-                        !DateUtils2.isSameMonth(
-                            filtered[i - 1].date, tx.date) ||
-                        filtered[i - 1].date.day != tx.date.day;
-
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (showDateHeader)
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(4, 16, 0, 8),
-                            child: Text(
-                              DateUtils2.toDayMonth(tx.date),
-                              style: AppTextStyles.labelSmall.copyWith(
-                                  color: AppColors.textSecondary,
-                                  letterSpacing: 1),
-                            ),
-                          ),
-                        _TransactionCard(tx: tx),
-                      ],
-                    );
+                return RefreshIndicator(
+                  onRefresh: () async {
+                    ref.invalidate(transactionsStreamProvider);
                   },
+                  child: ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                    itemCount: filtered.length,
+                    itemBuilder: (context, i) {
+                      final tx = filtered[i];
+                      final showDateHeader = i == 0 ||
+                          !DateUtils2.isSameMonth(
+                              filtered[i - 1].date, tx.date) ||
+                          filtered[i - 1].date.day != tx.date.day;
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (showDateHeader)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(4, 16, 0, 8),
+                              child: Text(
+                                DateUtils2.toDayMonth(tx.date),
+                                style: AppTextStyles.labelSmall.copyWith(
+                                    color: AppColors.textSecondary,
+                                    letterSpacing: 1),
+                              ),
+                            ),
+                          _TransactionCard(tx: tx),
+                        ],
+                      );
+                    },
+                  ),
                 );
               },
               loading: () => _ShimmerList(),

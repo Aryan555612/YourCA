@@ -6,6 +6,10 @@ import '../../shared/models/models.dart';
 import '../../shared/repositories/transaction_repository.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../features/categories/categorization_service.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
 import 'bank_sms_parser.dart';
 
 /// Provider that starts the background SMS listener on Android.
@@ -84,8 +88,51 @@ class SmsListenerService {
 
 // ── Background handler (top-level, required by telephony package) ─────────────
 @pragma('vm:entry-point')
-void backgroundSmsHandler(SmsMessage message) {
-  // Background processing is limited — we store a flag for next foreground visit.
-  // Full background processing requires a background isolate setup which is
-  // outside MVP scope but can be added via flutter_background_service.
+Future<void> backgroundSmsHandler(SmsMessage message) async {
+  try {
+    WidgetsFlutterBinding.ensureInitialized();
+    await Firebase.initializeApp();
+
+    final body = message.body ?? '';
+    final sender = message.address ?? '';
+
+    final result = BankSmsParser.instance.parse(body: body, sender: sender);
+    if (result == null) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final userId = user.uid;
+
+    final category = CategorizationService.instance.categorizeWithType(
+      result.merchant,
+      isCredit: !result.isDebit,
+    );
+
+    final tx = Transaction(
+      id: const Uuid().v4(),
+      userId: userId,
+      amount: result.amount,
+      type: result.isDebit ? TransactionType.debit : TransactionType.credit,
+      category: category,
+      merchant: result.merchant,
+      date: result.date ??
+          (message.date != null
+              ? DateTime.fromMillisecondsSinceEpoch(message.date!)
+              : DateTime.now()),
+      source: TransactionSource.sms,
+      rawText: body,
+      createdAt: DateTime.now(),
+      bankReference: result.reference,
+    );
+
+    // Save directly to Firestore inside the background isolate
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
+        .collection('transactions')
+        .doc(tx.id)
+        .set(tx.toFirestore());
+  } catch (e) {
+    debugPrint('YourCA Background SMS Parse Error: $e');
+  }
 }

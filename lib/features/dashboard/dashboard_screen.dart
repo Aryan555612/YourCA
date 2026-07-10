@@ -284,109 +284,120 @@ class _DashboardContent extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: CustomScrollView(
-        slivers: [
-          // ── App Bar ──────────────────────────────────────────
-          SliverAppBar(
-            expandedHeight: 120,
-            backgroundColor: AppColors.background,
-            floating: false,
-            pinned: true,
-            flexibleSpace: FlexibleSpaceBar(
-              titlePadding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              title: Row(
-                children: [
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      gradient: AppColors.primaryGradient,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(Icons.android_rounded,
-                        color: Colors.white, size: 20),
-                  ),
-                  const SizedBox(width: 10),
-                  Text('YourCA', style: AppTextStyles.headlineMedium),
-                  const Spacer(),
-                  userAsync.when(
-                    data: (user) => IconButton(
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      icon: CircleAvatar(
-                        radius: 16,
-                        backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-                        child: Text(
-                          user != null && user.name.isNotEmpty
-                              ? user.name[0].toUpperCase()
-                              : 'U',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.primary,
-                          ),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          ref.invalidate(monthlySummaryProvider);
+          ref.invalidate(trendDataProvider);
+          ref.invalidate(transactionsStreamProvider);
+        },
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            // ── App Bar ──────────────────────────────────────────
+            SliverAppBar(
+              expandedHeight: 120,
+              backgroundColor: AppColors.background,
+              floating: false,
+              pinned: true,
+              flexibleSpace: FlexibleSpaceBar(
+                titlePadding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                title: Row(
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        gradient: AppColors.primaryGradient,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Center(
+                        child: FlutterLogo(
+                          size: 18,
                         ),
                       ),
-                      onPressed: () => context.pushNamed('profile'),
                     ),
+                    const SizedBox(width: 10),
+                    Text('YourCA', style: AppTextStyles.headlineMedium),
+                    const Spacer(),
+                    userAsync.when(
+                      data: (user) => IconButton(
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        icon: CircleAvatar(
+                          radius: 16,
+                          backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+                          child: Text(
+                            user != null && user.name.isNotEmpty
+                                ? user.name[0].toUpperCase()
+                                : 'U',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
+                        onPressed: () => context.pushNamed('profile'),
+                      ),
+                      loading: () => const SizedBox.shrink(),
+                      error: (_, __) => const SizedBox.shrink(),
+                    ),
+                  ],
+                ),
+                background: Container(
+                  decoration: BoxDecoration(
+                      gradient: AppColors.backgroundGradient),
+                ),
+              ),
+            ),
+
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              sliver: SliverList(
+                delegate: SliverChildListDelegate([
+                  // Month selector
+                  _MonthRow(selectedMonth: selectedMonth, ref: ref),
+                  const SizedBox(height: 16),
+
+                  // Quick Categorization Card (if any pending SMS transaction needs category selection)
+                  if (pendingSmsTx != null) ...[
+                    _QuickCategorizationCard(tx: pendingSmsTx),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // Summary cards / Smart Savings Hub
+                  summaryAsync.when(
+                    data: (s) => _SummarySection(summary: s),
+                    loading: () => const Center(
+                        child: CircularProgressIndicator()),
+                    error: (e, _) => Text('Error: $e'),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Category pie chart
+                  summaryAsync.when(
+                    data: (s) => s.categoryBreakdown.isEmpty
+                        ? const SizedBox.shrink()
+                        : _CategoryChart(summary: s),
                     loading: () => const SizedBox.shrink(),
                     error: (_, __) => const SizedBox.shrink(),
                   ),
-                ],
-              ),
-              background: Container(
-                decoration: BoxDecoration(
-                    gradient: AppColors.backgroundGradient),
+                  const SizedBox(height: 24),
+
+                  // Dynamic Trend Chart
+                  trendDataAsync.when(
+                    data: (points) =>
+                        points.isEmpty ? const SizedBox.shrink() : _BarChart(points: points),
+                    loading: () => const SizedBox.shrink(),
+                    error: (_, __) => const SizedBox.shrink(),
+                  ),
+                  const SizedBox(height: 100),
+                ]),
               ),
             ),
-          ),
-
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            sliver: SliverList(
-              delegate: SliverChildListDelegate([
-                // Month selector
-                _MonthRow(selectedMonth: selectedMonth, ref: ref),
-                const SizedBox(height: 16),
-
-                // Quick Categorization Card (if any pending SMS transaction needs category selection)
-                if (pendingSmsTx != null) ...[
-                  _QuickCategorizationCard(tx: pendingSmsTx),
-                  const SizedBox(height: 16),
-                ],
-
-                // Summary cards / Smart Savings Hub
-                summaryAsync.when(
-                  data: (s) => _SummarySection(summary: s),
-                  loading: () => const Center(
-                      child: CircularProgressIndicator()),
-                  error: (e, _) => Text('Error: $e'),
-                ),
-                const SizedBox(height: 24),
-
-                // Category pie chart
-                summaryAsync.when(
-                  data: (s) => s.categoryBreakdown.isEmpty
-                      ? const SizedBox.shrink()
-                      : _CategoryChart(summary: s),
-                  loading: () => const SizedBox.shrink(),
-                  error: (_, __) => const SizedBox.shrink(),
-                ),
-                const SizedBox(height: 24),
-
-                // Dynamic Trend Chart
-                trendDataAsync.when(
-                  data: (points) =>
-                      points.isEmpty ? const SizedBox.shrink() : _BarChart(points: points),
-                  loading: () => const SizedBox.shrink(),
-                  error: (_, __) => const SizedBox.shrink(),
-                ),
-                const SizedBox(height: 100),
-              ]),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

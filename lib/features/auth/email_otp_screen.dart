@@ -232,8 +232,11 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
             gradient: AppColors.primaryGradient,
             borderRadius: BorderRadius.circular(20),
           ),
-          child: const Icon(Icons.account_balance_wallet_rounded,
-              color: Colors.white, size: 26),
+          child: const Center(
+            child: FlutterLogo(
+              size: 26,
+            ),
+          ),
         ),
         const SizedBox(width: 12),
         Text('YourCA', style: AppTextStyles.headlineLarge.copyWith(fontWeight: FontWeight.w800)),
