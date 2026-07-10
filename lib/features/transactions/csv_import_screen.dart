@@ -1,4 +1,4 @@
-import 'dart:io';
+﻿import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
@@ -226,11 +226,11 @@ class _CsvImportScreenState extends ConsumerState<CsvImportScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          // ── Info banner ──────────────────────────────────────
+          // â”€â”€ Info banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           _InfoBanner(),
           const SizedBox(height: 24),
 
-          // ── File picker ──────────────────────────────────────
+          // â”€â”€ File picker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           _FilePicker(
               fileName: _fileName,
               isParsing: _isParsing,
@@ -241,9 +241,9 @@ class _CsvImportScreenState extends ConsumerState<CsvImportScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppColors.debit.withOpacity(0.1),
+                color: AppColors.debit.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.debit.withOpacity(0.4)),
+                border: Border.all(color: AppColors.debit.withValues(alpha: 0.4)),
               ),
               child: Text(_error!,
                   style: AppTextStyles.bodySmall
@@ -252,7 +252,7 @@ class _CsvImportScreenState extends ConsumerState<CsvImportScreen> {
             const SizedBox(height: 16),
           ],
 
-          // ── Column mapping ───────────────────────────────────
+          // â”€â”€ Column mapping â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           if (_rawRows.isNotEmpty) ...[
             _ColumnMapper(
               headers: _rawRows[0].map((h) => h.toString()).toList(),
@@ -267,7 +267,7 @@ class _CsvImportScreenState extends ConsumerState<CsvImportScreen> {
             const SizedBox(height: 20),
           ],
 
-          // ── Preview table ────────────────────────────────────
+          // â”€â”€ Preview table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           if (_parsedRows.isNotEmpty) ...[
             Row(
               children: [
@@ -316,7 +316,7 @@ class _CsvImportScreenState extends ConsumerState<CsvImportScreen> {
                 padding: const EdgeInsets.all(32),
                 child: Column(
                   children: [
-                    const Text('✅', style: TextStyle(fontSize: 48)),
+                    const Text('âœ…', style: TextStyle(fontSize: 48)),
                     const SizedBox(height: 12),
                     Text(
                       '$_importedCount transactions imported!',
@@ -341,7 +341,7 @@ class _InfoBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.primaryGlow,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -454,7 +454,7 @@ class _ColumnMapperState extends State<_ColumnMapper> {
                                   horizontal: 12, vertical: 8)),
                           items: [
                             const DropdownMenuItem<int?>(
-                                value: null, child: Text('— Not mapped —')),
+                                value: null, child: Text('â€” Not mapped â€”')),
                             ...widget.headers.asMap().entries.map((h) =>
                                 DropdownMenuItem<int?>(
                                     value: h.key,
@@ -522,7 +522,7 @@ class _PreviewRow extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
         ),
         subtitle: Text(
-          '${DateUtils2.toDisplayDate(row.date)}  ·  ${row.category}',
+          '${DateUtils2.toDisplayDate(row.date)}  Â·  ${row.category}',
           style: AppTextStyles.bodySmall,
         ),
         secondary: Text(

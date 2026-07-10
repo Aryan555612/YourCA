@@ -1,11 +1,11 @@
-name: Build Android App
+name: Build Signed Release APK
 
 on:
   push:
     branches:
       - main
       - master
-  workflow_dispatch: # Allows manual trigger from the GitHub Actions page
+  workflow_dispatch: # Allows manual trigger from GitHub Actions page
 
 jobs:
   build:
@@ -38,34 +38,49 @@ jobs:
           rm -rf .gradle
           ./gradlew clean --no-daemon || true
 
-      - name: Generate Release Keystore
+      # ── Decode the permanent keystore from GitHub Secrets ─────────────────────
+      # Go to: GitHub repo → Settings → Secrets → Actions → New repository secret
+      # Add these 4 secrets:
+      #   KEYSTORE_BASE64       → base64 of yourca-release.jks (see android/app/yourca-release.jks.b64.txt)
+      #   KEYSTORE_PASSWORD     → YourCA@2024#Secure
+      #   KEY_ALIAS             → yourcakey
+      #   KEY_PASSWORD          → YourCA@2024#Secure
+      - name: Decode Release Keystore
         run: |
-          keytool -genkey -v -keystore android/app/release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias yourcakey -storepass yourcapassword -keypass yourcapassword -dname "CN=YourCA, OU=Development, O=YourCA, L=New Delhi, S=Delhi, C=IN"
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/yourca-release.jks
+          echo "Keystore decoded successfully"
 
-      - name: Build release APK (for sideload/WhatsApp sharing)
+      # ── Build signed release APK (for sharing via WhatsApp) ───────────────────
+      - name: Build signed release APK
         env:
-          ANDROID_KEYSTORE_PATH: "release.jks"
-          ANDROID_KEYSTORE_PASSWORD: "yourcapassword"
-          ANDROID_KEY_ALIAS: "yourcakey"
-          ANDROID_KEY_PASSWORD: "yourcapassword"
+          ANDROID_KEYSTORE_PATH: "yourca-release.jks"
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: flutter build apk --release
 
-      - name: Build release App Bundle (AAB for Google Play Store upload)
+      # ── Build signed AAB (for future Play Store use) ───────────────────────────
+      - name: Build signed App Bundle (AAB)
         env:
-          ANDROID_KEYSTORE_PATH: "release.jks"
-          ANDROID_KEYSTORE_PASSWORD: "yourcapassword"
-          ANDROID_KEY_ALIAS: "yourcakey"
-          ANDROID_KEY_PASSWORD: "yourcapassword"
+          ANDROID_KEYSTORE_PATH: "yourca-release.jks"
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: flutter build appbundle --release
 
-      - name: Upload APK artifact
+      # ── Upload APK (WhatsApp-sharable) ────────────────────────────────────────
+      - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: release-apk
+          name: YourCA-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
 
-      - name: Upload AAB artifact
+      # ── Upload AAB (Play Store ready) ─────────────────────────────────────────
+      - name: Upload Release AAB
         uses: actions/upload-artifact@v4
         with:
-          name: release-aab
+          name: YourCA-release-aab
           path: build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30
+

@@ -3,14 +3,10 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart' show debugPrint;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_auth_platform_interface/firebase_auth_platform_interface.dart' show FirebaseAuthPlatform;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../shared/models/models.dart';
 import '../../shared/repositories/user_repository.dart';
-
-import 'package:shared_preferences/shared_preferences.dart';
 
 // ── Firebase Auth instance ─────────────────────────────────────────────────
 final firebaseAuthProvider = Provider<FirebaseAuth>((ref) {
@@ -31,9 +27,6 @@ final currentUserIdProvider = Provider<String?>((ref) {
 class AuthNotifier extends AsyncNotifier<void> {
   late FirebaseAuth _auth;
   late UserRepository _userRepo;
-  String? _verificationId;
-  int? _resendToken;
-  ConfirmationResult? _webConfirmationResult;
 
   @override
   Future<void> build() async {
@@ -150,6 +143,7 @@ class AuthNotifier extends AsyncNotifier<void> {
   }
 
   // ── Ensure user profile exists in Firestore ────────────────────────────
+  // ignore: unused_element
   Future<void> _ensureUserProfile() async {
     final user = _auth.currentUser;
     if (user == null) return;

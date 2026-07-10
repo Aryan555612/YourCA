@@ -18,6 +18,8 @@ firestore-debug.log
 # ── Android ────────────────────────────────────────────────────────────────────
 *.keystore
 *.jks
+*.b64.txt
+android/key.properties
 android/local.properties
 android/.gradle/
 android/captures/

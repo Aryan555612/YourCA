@@ -1,6 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/format_utils.dart';
@@ -9,9 +12,11 @@ import '../../shared/models/models.dart';
 import '../../shared/repositories/transaction_repository.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../features/transactions/transaction_list_screen.dart';
+import '../../features/sms/sms_permission_screen.dart';
+import '../../features/sms/sms_listener_service.dart';
 import '../../shared/widgets/summary_card.dart';
 
-// ── Monthly summary provider ──────────────────────────────────────────────────
+// â”€â”€ Monthly summary provider â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 final monthlySummaryProvider =
     FutureProvider.autoDispose<MonthlySummary>((ref) async {
@@ -86,10 +91,75 @@ final last6MonthsSummaryProvider =
   return summaries;
 });
 
-// ── Screen ────────────────────────────────────────────────────────────────────
+// â”€â”€ Screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-class DashboardScreen extends ConsumerWidget {
+class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
+
+  @override
+  ConsumerState<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends ConsumerState<DashboardScreen> {
+  bool _showSmsPermission = false;
+  static const _prefKey = 'sms_permission_asked';
+
+  @override
+  void initState() {
+    super.initState();
+    if (Platform.isAndroid) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _setupSms());
+    }
+  }
+
+  Future<void> _setupSms() async {
+    final prefs = await SharedPreferences.getInstance();
+    final alreadyAsked = prefs.getBool(_prefKey) ?? false;
+    final status = await Permission.sms.status;
+
+    if (status.isGranted) {
+      // Permission already granted — start listener right away
+      _startSmsListener();
+    } else if (!alreadyAsked) {
+      // First launch — show the permission rationale screen
+      if (mounted) setState(() => _showSmsPermission = true);
+    }
+    // Already denied before — don't ask again, user can grant via Settings
+  }
+
+  void _startSmsListener() {
+    ref.read(smsListenerProvider).start();
+  }
+
+  Future<void> _onSmsGranted() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefKey, true);
+    if (mounted) setState(() => _showSmsPermission = false);
+    _startSmsListener();
+  }
+
+  Future<void> _onSmsDenied() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefKey, true);
+    if (mounted) setState(() => _showSmsPermission = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_showSmsPermission) {
+      return SmsPermissionScreen(
+        onGranted: _onSmsGranted,
+        onDenied: _onSmsDenied,
+      );
+    }
+    return const _DashboardContent();
+  }
+}
+
+// ── Dashboard Content ─────────────────────────────────────────────────────────
+
+class _DashboardContent extends ConsumerWidget {
+  const _DashboardContent();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -102,7 +172,7 @@ class DashboardScreen extends ConsumerWidget {
       backgroundColor: AppColors.background,
       body: CustomScrollView(
         slivers: [
-          // ── App Bar ─────────────────────────────────────────
+          // â”€â”€ App Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           SliverAppBar(
             expandedHeight: 120,
             backgroundColor: AppColors.background,
@@ -131,7 +201,7 @@ class DashboardScreen extends ConsumerWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          '👋 ${user?.name?.isNotEmpty == true ? user!.name.split(' ').first : "Hello"}',
+                          'ðŸ‘‹ ${user != null && user.name.isNotEmpty ? user.name.split(' ').first : "Hello"}',
                           style: AppTextStyles.bodyMedium
                               .copyWith(color: AppColors.textSecondary),
                         ),
@@ -203,7 +273,7 @@ class DashboardScreen extends ConsumerWidget {
   }
 }
 
-// ── Month row ─────────────────────────────────────────────────────────────────
+// â”€â”€ Month row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class _MonthRow extends StatelessWidget {
   final DateTime selectedMonth;
@@ -251,7 +321,7 @@ class _MonthRow extends StatelessWidget {
   }
 }
 
-// ── Summary section ───────────────────────────────────────────────────────────
+// â”€â”€ Summary section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class _SummarySection extends StatelessWidget {
   final MonthlySummary summary;
@@ -262,7 +332,7 @@ class _SummarySection extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // Net savings — hero card
+        // Net savings â€” hero card
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(22),
@@ -277,7 +347,7 @@ class _SummarySection extends StatelessWidget {
             children: [
               Text('Net Savings',
                   style: AppTextStyles.bodyMedium
-                      .copyWith(color: Colors.white.withOpacity(0.8))),
+                      .copyWith(color: Colors.white.withValues(alpha: 0.8))),
               const SizedBox(height: 4),
               Text(
                 CurrencyUtils.format(summary.netSavings.abs()),
@@ -290,14 +360,14 @@ class _SummarySection extends StatelessWidget {
                     summary.savingsRate >= 0.3
                         ? Icons.trending_up_rounded
                         : Icons.trending_down_rounded,
-                    color: Colors.white.withOpacity(0.9),
+                    color: Colors.white.withValues(alpha: 0.9),
                     size: 18,
                   ),
                   const SizedBox(width: 6),
                   Text(
                     'Savings rate: ${(summary.savingsRate * 100).toStringAsFixed(1)}%',
                     style: AppTextStyles.bodyMedium
-                        .copyWith(color: Colors.white.withOpacity(0.9)),
+                        .copyWith(color: Colors.white.withValues(alpha: 0.9)),
                   ),
                 ],
               ),
@@ -331,7 +401,7 @@ class _SummarySection extends StatelessWidget {
   }
 }
 
-// ── Category Donut Chart ──────────────────────────────────────────────────────
+// â”€â”€ Category Donut Chart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class _CategoryChart extends StatefulWidget {
   final MonthlySummary summary;
@@ -358,7 +428,7 @@ class _CategoryChartState extends State<_CategoryChart> {
       final isTouched = _touchedIndex == i;
 
       return PieChartSectionData(
-        color: (info.color as Color).withOpacity(isTouched ? 1.0 : 0.8),
+        color: (info.color as Color).withValues(alpha: isTouched ? 1.0 : 0.8),
         value: cat.value,
         title: isTouched ? CurrencyUtils.formatCompact(cat.value) : '',
         radius: isTouched ? 80 : 64,
@@ -434,7 +504,7 @@ class _CategoryChartState extends State<_CategoryChart> {
   }
 }
 
-// ── 6-Month Bar Chart ─────────────────────────────────────────────────────────
+// â”€â”€ 6-Month Bar Chart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class _BarChart extends StatelessWidget {
   final List<MonthlySummary> months;
@@ -514,7 +584,7 @@ class _BarChart extends StatelessWidget {
                   gridData: FlGridData(
                     show: true,
                     getDrawingHorizontalLine: (_) => FlLine(
-                      color: AppColors.border.withOpacity(0.5),
+                      color: AppColors.border.withValues(alpha: 0.5),
                       strokeWidth: 0.5,
                     ),
                     drawVerticalLine: false,

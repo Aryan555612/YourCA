@@ -1,17 +1,15 @@
 import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
-import '../../features/categories/categorization_service.dart';
 
 final transactionRepositoryProvider = Provider<TransactionRepository>((ref) {
-  return TransactionRepository(FirebaseFirestore.instance, ref);
+  return TransactionRepository(FirebaseFirestore.instance);
 });
 
 class TransactionRepository {
   final FirebaseFirestore _firestore;
-  final Ref _ref;
 
-  TransactionRepository(this._firestore, this._ref);
+  TransactionRepository(this._firestore);
 
   CollectionReference<Map<String, dynamic>> _txCol(String userId) =>
       _firestore.collection('users').doc(userId).collection('transactions');

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
@@ -8,9 +8,8 @@ import '../../shared/repositories/transaction_repository.dart';
 import '../../shared/repositories/user_repository.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../features/dashboard/dashboard_screen.dart';
-import '../../features/transactions/transaction_list_screen.dart';
 
-// ── Savings suggestion engine ─────────────────────────────────────────────────
+// â”€â”€ Savings suggestion engine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 final savingsSuggestionsProvider =
     FutureProvider.autoDispose<List<SavingsSuggestion>>((ref) async {
@@ -53,7 +52,7 @@ class _SuggestionEngine {
   }) {
     final suggestions = <SavingsSuggestion>[];
 
-    // ── Compute category spend by month ─────────────────────────────────
+    // â”€â”€ Compute category spend by month â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     Map<String, double> _catSpend(List<Transaction> txs) {
       final map = <String, double>{};
       for (final tx in txs) {
@@ -74,7 +73,7 @@ class _SuggestionEngine {
     final thisExpense =
         thisSpend.values.fold(0.0, (s, v) => s + v);
 
-    // ── 1. Spike detection (> 20% above 2-month average) ──────────────
+    // â”€â”€ 1. Spike detection (> 20% above 2-month average) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     for (final cat in thisSpend.keys) {
       if (cat == 'Income' || cat == 'Other') continue;
       final thisAmt = thisSpend[cat] ?? 0;
@@ -85,17 +84,17 @@ class _SuggestionEngine {
         final increase = ((thisAmt - avgPrev) / avgPrev * 100).round();
         suggestions.add(SavingsSuggestion(
           type: SuggestionType.spike,
-          title: '📈 $cat spending spiked',
+          title: 'ðŸ“ˆ $cat spending spiked',
           description:
-              'You\'ve spent ${CurrencyUtils.formatNoDecimal(thisAmt)} on $cat this month — $increase% higher than your usual ${CurrencyUtils.formatNoDecimal(avgPrev)}.',
+              'You\'ve spent ${CurrencyUtils.formatNoDecimal(thisAmt)} on $cat this month â€” $increase% higher than your usual ${CurrencyUtils.formatNoDecimal(avgPrev)}.',
           category: cat,
           amount: thisAmt - avgPrev,
-          emoji: '📈',
+          emoji: 'ðŸ“ˆ',
         ));
       }
     }
 
-    // ── 2. Savings gap suggestion ──────────────────────────────────────
+    // â”€â”€ 2. Savings gap suggestion â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (thisIncome > 0) {
       final actualRate = (thisIncome - thisExpense) / thisIncome;
       if (actualRate < targetSavingsRate) {
@@ -111,18 +110,18 @@ class _SuggestionEngine {
               (targetSavingsRate - actualRate) * thisIncome;
           suggestions.add(SavingsSuggestion(
             type: SuggestionType.gap,
-            title: '🎯 Close your savings gap',
+            title: 'ðŸŽ¯ Close your savings gap',
             description:
                 'You need to save ${CurrencyUtils.formatNoDecimal(gapAmount)} more to hit your ${(targetSavingsRate * 100).round()}% goal. Cutting ${topCat.key} spending by ${CurrencyUtils.formatNoDecimal(gapAmount)} would do it.',
             category: topCat.key,
             amount: gapAmount,
-            emoji: '🎯',
+            emoji: 'ðŸŽ¯',
           ));
         }
       }
     }
 
-    // ── 3. Month projection ────────────────────────────────────────────
+    // â”€â”€ 3. Month projection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     final daysElapsed = currentMonth.day;
     final daysInMonth =
         DateTime(currentMonth.year, currentMonth.month + 1, 0).day;
@@ -132,15 +131,15 @@ class _SuggestionEngine {
       final projectedSavings = thisIncome - projectedExpense;
       suggestions.add(SavingsSuggestion(
         type: SuggestionType.projection,
-        title: '📊 Month projection',
+        title: 'ðŸ“Š Month projection',
         description:
             'At your current pace, you\'ll save ${CurrencyUtils.formatNoDecimal(projectedSavings)} this month (${daysInMonth - daysElapsed} days left).',
         amount: projectedSavings,
-        emoji: '📊',
+        emoji: 'ðŸ“Š',
       ));
     }
 
-    // ── 4. Recurring merchant detection ───────────────────────────────
+    // â”€â”€ 4. Recurring merchant detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     final merchantFreq = <String, int>{};
     for (final tx in [...lastTxs, ...twoAgoTxs]) {
       merchantFreq[tx.merchant] = (merchantFreq[tx.merchant] ?? 0) + 1;
@@ -153,10 +152,10 @@ class _SuggestionEngine {
       final names = recurring.map((e) => e.key).join(', ');
       suggestions.add(SavingsSuggestion(
         type: SuggestionType.recurring,
-        title: '🔁 Recurring expenses spotted',
+        title: 'ðŸ” Recurring expenses spotted',
         description:
             'We noticed regular payments to $names. Check if all subscriptions are still used.',
-        emoji: '🔁',
+        emoji: 'ðŸ”',
       ));
     }
 
@@ -164,7 +163,7 @@ class _SuggestionEngine {
   }
 }
 
-// ── Savings Screen ────────────────────────────────────────────────────────────
+// â”€â”€ Savings Screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class SavingsScreen extends ConsumerWidget {
   const SavingsScreen({super.key});
@@ -180,7 +179,7 @@ class SavingsScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // ── Savings rate gauge ───────────────────────────────
+          // â”€â”€ Savings rate gauge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           summaryAsync.when(
             data: (s) => _SavingsRateCard(summary: s),
             loading: () => const Center(child: CircularProgressIndicator()),
@@ -197,7 +196,7 @@ class SavingsScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 16),
 
-          // ── Suggestions ──────────────────────────────────────
+          // â”€â”€ Suggestions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           suggestionsAsync.when(
             data: (suggestions) => suggestions.isEmpty
                 ? _EmptySuggestions()
@@ -246,11 +245,11 @@ class _SavingsRateCard extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.15),
+                    color: color.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    isGood ? '✅ On track' : '⚠️ Below target',
+                    isGood ? 'âœ… On track' : 'âš ï¸ Below target',
                     style: AppTextStyles.labelMedium.copyWith(color: color),
                   ),
                 ),
@@ -336,16 +335,16 @@ class _SuggestionCard extends StatelessWidget {
     final Color cardColor;
     switch (suggestion.type) {
       case SuggestionType.spike:
-        cardColor = AppColors.debit.withOpacity(0.08);
+        cardColor = AppColors.debit.withValues(alpha: 0.08);
         break;
       case SuggestionType.gap:
-        cardColor = AppColors.warning.withOpacity(0.08);
+        cardColor = AppColors.warning.withValues(alpha: 0.08);
         break;
       case SuggestionType.projection:
-        cardColor = AppColors.primary.withOpacity(0.08);
+        cardColor = AppColors.primary.withValues(alpha: 0.08);
         break;
       case SuggestionType.recurring:
-        cardColor = AppColors.credit.withOpacity(0.08);
+        cardColor = AppColors.credit.withValues(alpha: 0.08);
         break;
     }
 
@@ -385,7 +384,7 @@ class _EmptySuggestions extends StatelessWidget {
       ),
       child: Column(
         children: [
-          const Text('🎉', style: TextStyle(fontSize: 40)),
+          const Text('ðŸŽ‰', style: TextStyle(fontSize: 40)),
           const SizedBox(height: 12),
           Text(
             'Great job!',
@@ -412,7 +411,7 @@ class _V2Notice extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.primaryGlow,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -429,9 +428,9 @@ class _V2Notice extends StatelessWidget {
                         .copyWith(color: AppColors.primaryLight)),
                 const SizedBox(height: 4),
                 Text(
-                  'India\'s RBI-approved AA framework will let YourCA pull real bank data server-side — no SMS needed. Works on Android, iOS, and Web identically.',
+                  'India\'s RBI-approved AA framework will let YourCA pull real bank data server-side â€” no SMS needed. Works on Android, iOS, and Web identically.',
                   style: AppTextStyles.bodySmall
-                      .copyWith(color: AppColors.primaryLight.withOpacity(0.8)),
+                      .copyWith(color: AppColors.primaryLight.withValues(alpha: 0.8)),
                 ),
               ],
             ),

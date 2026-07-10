@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:another_telephony/another_telephony.dart';
+import 'package:another_telephony/telephony.dart';
 import 'package:uuid/uuid.dart';
 import '../../shared/models/models.dart';
 import '../../shared/repositories/transaction_repository.dart';

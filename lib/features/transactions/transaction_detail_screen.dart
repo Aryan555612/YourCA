@@ -164,7 +164,6 @@ class _TxDetailBodyState extends ConsumerState<_TxDetailBody> {
     final tx = widget.tx;
     final isDebit = tx.type == TransactionType.debit;
     final catInfo = AppCategories.getCategory(tx.category);
-    final color = isDebit ? AppColors.debit : AppColors.credit;
 
     return ListView(
       padding: const EdgeInsets.all(20),

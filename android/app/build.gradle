@@ -29,13 +29,16 @@ if (keystorePropertiesFile.exists()) {
     keystorePropertiesFile.withReader('UTF-8') { reader ->
         keystoreProperties.load(reader)
     }
+    // Resolve storeFile relative to android/app/ directory
+    if (keystoreProperties.getProperty('storeFile')) {
+        def resolvedPath = keystoreProperties.getProperty('storeFile')
+        keystoreProperties.setProperty('storeFile', rootProject.file(resolvedPath).absolutePath)
+    }
 }
 
 // Support loading from environment variables directly for CI/CD environments
-def keyStoreFile = keystoreProperties.getProperty('storeFile') ? file(keystoreProperties.getProperty('storeFile')) : null
-if (keyStoreFile == null && System.getenv('ANDROID_KEYSTORE_PATH')) {
-    keyStoreFile = file(System.getenv('ANDROID_KEYSTORE_PATH'))
-}
+def keyStoreFilePath = keystoreProperties.getProperty('storeFile') ?: System.getenv('ANDROID_KEYSTORE_PATH')
+def keyStoreFile = keyStoreFilePath ? file(keyStoreFilePath) : null
 def keyStorePassword = keystoreProperties.getProperty('storePassword') ?: System.getenv('ANDROID_KEYSTORE_PASSWORD')
 def keyAliasName = keystoreProperties.getProperty('keyAlias') ?: System.getenv('ANDROID_KEY_ALIAS')
 def keyPasswordValue = keystoreProperties.getProperty('keyPassword') ?: System.getenv('ANDROID_KEY_PASSWORD')
@@ -61,7 +64,7 @@ android {
     defaultConfig {
         applicationId "com.yourca.app"
         minSdkVersion 23
-        targetSdkVersion flutter.targetSdkVersion
+        targetSdkVersion 35
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         multiDexEnabled true
@@ -85,8 +88,9 @@ android {
             } else {
                 signingConfig signingConfigs.debug
             }
-            minifyEnabled false
-            shrinkResources false
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 }

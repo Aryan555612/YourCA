@@ -1,15 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.yourca.app">
 
-    <!-- ── SMS Permissions (Android only, sideloaded app) ──────────────────── -->
-    <!-- These permissions allow YourCA to read bank transaction SMS alerts.    -->
-    <!-- The app is NOT distributed via Play Store, so Google's SMS permission  -->
-    <!-- policy for store apps does NOT apply.                                  -->
-    <!-- Users are shown a transparent rationale screen before this is requested.-->
+    <!-- ── SMS Permissions (sideloaded APK — not Play Store) ─────────────── -->
+    <!-- Required for automatic bank transaction detection from SMS alerts.      -->
+    <!-- Users are shown a clear rationale screen before this is requested.      -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.READ_SMS" />
 
-    <!-- ── Phone state (for SIM-based features) ────────────────────────────── -->
+    <!-- ── Phone state (for SIM-based SMS features) ───────────────────────── -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
 
     <!-- ── Internet (Firebase, cloud sync) ────────────────────────────────── -->
