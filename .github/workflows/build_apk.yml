@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android App
 
 on:
   push:
@@ -42,11 +42,30 @@ jobs:
         run: |
           keytool -genkey -v -keystore android/app/release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias yourcakey -storepass yourcapassword -keypass yourcapassword -dname "CN=YourCA, OU=Development, O=YourCA, L=New Delhi, S=Delhi, C=IN"
 
-      - name: Build release APK
+      - name: Build release APK (for sideload/WhatsApp sharing)
+        env:
+          ANDROID_KEYSTORE_PATH: "release.jks"
+          ANDROID_KEYSTORE_PASSWORD: "yourcapassword"
+          ANDROID_KEY_ALIAS: "yourcakey"
+          ANDROID_KEY_PASSWORD: "yourcapassword"
         run: flutter build apk --release
+
+      - name: Build release App Bundle (AAB for Google Play Store upload)
+        env:
+          ANDROID_KEYSTORE_PATH: "release.jks"
+          ANDROID_KEYSTORE_PASSWORD: "yourcapassword"
+          ANDROID_KEY_ALIAS: "yourcakey"
+          ANDROID_KEY_PASSWORD: "yourcapassword"
+        run: flutter build appbundle --release
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-aab
+          path: build/app/outputs/bundle/release/app-release.aab

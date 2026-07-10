@@ -23,6 +23,23 @@ if (flutterVersionName == null) {
     flutterVersionName = '1.0'
 }
 
+def keystorePropertiesFile = rootProject.file('key.properties')
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withReader('UTF-8') { reader ->
+        keystoreProperties.load(reader)
+    }
+}
+
+// Support loading from environment variables directly for CI/CD environments
+def keyStoreFile = keystoreProperties.getProperty('storeFile') ? file(keystoreProperties.getProperty('storeFile')) : null
+if (keyStoreFile == null && System.getenv('ANDROID_KEYSTORE_PATH')) {
+    keyStoreFile = file(System.getenv('ANDROID_KEYSTORE_PATH'))
+}
+def keyStorePassword = keystoreProperties.getProperty('storePassword') ?: System.getenv('ANDROID_KEYSTORE_PASSWORD')
+def keyAliasName = keystoreProperties.getProperty('keyAlias') ?: System.getenv('ANDROID_KEY_ALIAS')
+def keyPasswordValue = keystoreProperties.getProperty('keyPassword') ?: System.getenv('ANDROID_KEY_PASSWORD')
+
 android {
     namespace "com.yourca.app"
     compileSdkVersion flutter.compileSdkVersion
@@ -52,16 +69,18 @@ android {
 
     signingConfigs {
         release {
-            storeFile file('release.jks')
-            storePassword 'yourcapassword'
-            keyAlias 'yourcakey'
-            keyPassword 'yourcapassword'
+            if (keyStoreFile != null && keyStorePassword != null && keyAliasName != null && keyPasswordValue != null) {
+                storeFile keyStoreFile
+                storePassword keyStorePassword
+                keyAlias keyAliasName
+                keyPassword keyPasswordValue
+            }
         }
     }
 
     buildTypes {
         release {
-            if (file('release.jks').exists()) {
+            if (keyStoreFile != null && keyStoreFile.exists()) {
                 signingConfig signingConfigs.release
             } else {
                 signingConfig signingConfigs.debug
