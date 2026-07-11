@@ -1,10 +1,12 @@
 import 'dart:math';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart' show debugPrint;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../shared/models/models.dart';
 import '../../shared/repositories/user_repository.dart';
 
@@ -18,8 +20,22 @@ final authStateProvider = StreamProvider<User?>((ref) {
   return ref.watch(firebaseAuthProvider).authStateChanges();
 });
 
+// ── Stable User ID provider ────────────────────────────────────────────────
+// This is the KEY fix: instead of using Firebase anonymous UID (which changes on
+// each reinstall), we use a stable ID derived from the user's email and stored
+// in Firestore. This guarantees the same email always maps to the same SQLite
+// user_id, preserving all local data across reinstalls and re-logins.
+const _stableUidPrefKey = 'stable_user_id';
+const _stableEmailPrefKey = 'stable_user_email';
+
+final stableUserIdProvider = StateProvider<String?>((ref) => null);
+
 // ── Current UID shortcut ───────────────────────────────────────────────────
+// Uses stableUserIdProvider first; falls back to Firebase UID only if stable
+// ID hasn't been loaded yet (brief transition state).
 final currentUserIdProvider = Provider<String?>((ref) {
+  final stableId = ref.watch(stableUserIdProvider);
+  if (stableId != null) return stableId;
   return ref.watch(authStateProvider).valueOrNull?.uid;
 });
 
@@ -32,6 +48,56 @@ class AuthNotifier extends AsyncNotifier<void> {
   Future<void> build() async {
     _auth = ref.watch(firebaseAuthProvider);
     _userRepo = ref.watch(userRepositoryProvider);
+    // Restore stable ID from prefs on app start
+    await _restoreStableId();
+  }
+
+  // ── Restore stable user ID from local prefs ────────────────────────────
+  Future<void> _restoreStableId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedId = prefs.getString(_stableUidPrefKey);
+      if (savedId != null) {
+        ref.read(stableUserIdProvider.notifier).state = savedId;
+      }
+    } catch (_) {}
+  }
+
+  // ── Generate deterministic stable UID from email ───────────────────────
+  // Uses SHA-256 of the email to create a consistent, collision-resistant ID
+  // that is the same every time the user logs in with the same email.
+  String _generateStableId(String email) {
+    final bytes = utf8.encode(email.toLowerCase().trim());
+    final digest = sha256.convert(bytes);
+    // Take first 32 hex chars for a shorter but still unique ID
+    return digest.toString().substring(0, 32);
+  }
+
+  // ── Get or create stable UID in Firestore ──────────────────────────────
+  Future<String> _getOrCreateStableUid(String email) async {
+    final docRef = FirebaseFirestore.instance
+        .collection('user_stable_ids')
+        .doc(email.toLowerCase().trim());
+
+    try {
+      final doc = await docRef.get();
+      if (doc.exists && doc.data()?['stable_uid'] != null) {
+        return doc.data()!['stable_uid'] as String;
+      }
+    } catch (_) {}
+
+    // Not in Firestore yet — generate and store
+    final stableUid = _generateStableId(email);
+    try {
+      await docRef.set({
+        'stable_uid': stableUid,
+        'email': email.toLowerCase().trim(),
+        'created_at': DateTime.now().toIso8601String(),
+      });
+    } catch (_) {
+      // Firestore write failed (offline?) — still use the generated ID locally
+    }
+    return stableUid;
   }
 
   // ── Custom Email OTP Authentication flow ──────────────────────────────────
@@ -120,19 +186,44 @@ class AuthNotifier extends AsyncNotifier<void> {
       // 2. Log in anonymously (works instantly on Spark plan with no card!)
       final credential = await _auth.signInAnonymously();
 
-      // 3. Ensure user profile in Firestore
-      final existingProfile = await _userRepo.fetchProfile(credential.user!.uid);
+      // 3. Get or create the STABLE user ID for this email (KEY FIX)
+      // This ensures the same email always maps to the same SQLite user_id,
+      // even across reinstalls, re-logins, or different devices.
+      final stableUid = await _getOrCreateStableUid(email);
+
+      // 4. Save stable UID to SharedPreferences for offline use
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_stableUidPrefKey, stableUid);
+      await prefs.setString(_stableEmailPrefKey, email.toLowerCase().trim());
+
+      // 5. Update the in-memory state provider
+      ref.read(stableUserIdProvider.notifier).state = stableUid;
+
+      // 6. Ensure user profile in SQLite (using stable UID, NOT Firebase UID)
+      final existingProfile = await _userRepo.fetchProfile(stableUid);
       if (existingProfile == null) {
         await _userRepo.createProfile(UserProfile(
-          id: credential.user!.uid,
+          id: stableUid,
           name: email.split('@').first,
-          phoneNumber: email, // Store email inside phoneNumber
+          phoneNumber: email,
           createdAt: DateTime.now(),
         ));
       }
 
-      // 4. Clean up both the verification attempt and the parent OTP document
-      // (Since we are now logged in, we have the 'request.auth != null' permission to delete them)
+      // 7. Also store a mapping in Firestore linking Firebase UID → stable UID
+      // (useful for future cloud sync features)
+      try {
+        await FirebaseFirestore.instance
+            .collection('firebase_uid_map')
+            .doc(credential.user!.uid)
+            .set({
+          'stable_uid': stableUid,
+          'email': email.toLowerCase().trim(),
+          'updated_at': DateTime.now().toIso8601String(),
+        });
+      } catch (_) {}
+
+      // 8. Clean up both the verification attempt and the parent OTP document
       try {
         await FirebaseFirestore.instance
             .collection('otps')
@@ -142,7 +233,7 @@ class AuthNotifier extends AsyncNotifier<void> {
             .delete();
         await FirebaseFirestore.instance.collection('otps').doc(email).delete();
       } catch (e) {
-        // Safe to ignore cleanup failures (security rules are already satisfied)
+        // Safe to ignore cleanup failures
       }
 
       state = const AsyncData(null);
@@ -157,10 +248,11 @@ class AuthNotifier extends AsyncNotifier<void> {
   Future<void> _ensureUserProfile() async {
     final user = _auth.currentUser;
     if (user == null) return;
-    final existing = await _userRepo.fetchProfile(user.uid);
+    final stableUid = ref.read(stableUserIdProvider) ?? user.uid;
+    final existing = await _userRepo.fetchProfile(stableUid);
     if (existing == null) {
       await _userRepo.createProfile(UserProfile(
-        id: user.uid,
+        id: stableUid,
         name: user.displayName ?? '',
         phoneNumber: user.phoneNumber ?? '',
         createdAt: DateTime.now(),
@@ -169,7 +261,8 @@ class AuthNotifier extends AsyncNotifier<void> {
   }
 
   Future<void> updateUserName(String name) async {
-    final userId = _auth.currentUser?.uid;
+    final stableUid = ref.read(stableUserIdProvider);
+    final userId = stableUid ?? _auth.currentUser?.uid;
     if (userId == null) return;
     final profile = await _userRepo.fetchProfile(userId);
     if (profile == null) return;
@@ -178,6 +271,8 @@ class AuthNotifier extends AsyncNotifier<void> {
   }
 
   Future<void> signOut() async {
+    // Clear stable ID from memory (not from prefs — preserve for re-login)
+    ref.read(stableUserIdProvider.notifier).state = null;
     await _auth.signOut();
   }
 }
@@ -191,3 +286,5 @@ final userProfileProvider = StreamProvider<UserProfile?>((ref) {
   if (userId == null) return Stream.value(null);
   return ref.watch(userRepositoryProvider).watchProfile(userId);
 });
+
+

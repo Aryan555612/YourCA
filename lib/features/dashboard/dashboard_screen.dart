@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -103,6 +104,9 @@ class TrendDataPoint {
 }
 
 final selectedTrendRangeProvider = StateProvider<TrendRange>((ref) => TrendRange.sixMonths);
+
+enum ChartType { bar, line, area }
+final selectedChartTypeProvider = StateProvider<ChartType>((ref) => ChartType.bar);
 
 final trendDataProvider = FutureProvider.autoDispose<List<TrendDataPoint>>((ref) async {
   final userId = ref.watch(currentUserIdProvider);
@@ -344,6 +348,37 @@ class _DashboardContent extends ConsumerWidget {
                       loading: () => const SizedBox.shrink(),
                       error: (_, __) => const SizedBox.shrink(),
                     ),
+                    // Check Balance quick action
+                    if (Platform.isAndroid)
+                      IconButton(
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        tooltip: 'Check Balance',
+                        icon: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            gradient: AppColors.primaryGradient,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.account_balance_wallet_rounded,
+                                  color: Colors.white, size: 14),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Balance',
+                                style: AppTextStyles.labelSmall.copyWith(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        onPressed: () => context.pushNamed('balance'),
+                      ),
                   ],
                 ),
                 background: Container(
@@ -800,7 +835,7 @@ class _CategoryChartState extends State<_CategoryChart> {
   }
 }
 
-// â”€â”€ 6-Month Bar Chart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Financial Trend Chart (Bar / Line / Area) ─────────────────────────────
 
 class _BarChart extends ConsumerWidget {
   final List<TrendDataPoint> points;
@@ -810,8 +845,17 @@ class _BarChart extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final selectedRange = ref.watch(selectedTrendRangeProvider);
+    final selectedChartType = ref.watch(selectedChartTypeProvider);
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+
+    // ── Safe maxY calculation (FIX for red line bug) ──────────────────────
+    // Ensure maxY is never 0 or negative, which causes chart rendering issues
+    final rawMax = points.fold<double>(
+      0,
+      (max, p) => math.max(max, math.max(p.income, p.expense)),
+    );
+    final safeMaxY = rawMax <= 0 ? 100.0 : rawMax * 1.3;
 
     return Card(
       child: Padding(
@@ -819,6 +863,7 @@ class _BarChart extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ── Header row ────────────────────────────────────
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -833,139 +878,71 @@ class _BarChart extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 12),
-            
-            // ── Segmented Range Selector ──────────────────────
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: TrendRange.values.map((range) {
-                  final isSelected = range == selectedRange;
-                  String label = '';
-                  switch (range) {
-                    case TrendRange.oneWeek: label = '1W'; break;
-                    case TrendRange.oneMonth: label = '1M'; break;
-                    case TrendRange.threeMonths: label = '3M'; break;
-                    case TrendRange.sixMonths: label = '6M'; break;
-                    case TrendRange.oneYear: label = '1Y'; break;
-                  }
 
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: ChoiceChip(
-                      label: Text(label),
-                      selected: isSelected,
-                      onSelected: (val) {
-                        if (val) {
-                          ref.read(selectedTrendRangeProvider.notifier).state = range;
+            // ── Controls row: Range + Chart Type ──────────────
+            Row(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: TrendRange.values.map((range) {
+                        final isSelected = range == selectedRange;
+                        String label = '';
+                        switch (range) {
+                          case TrendRange.oneWeek: label = '1W'; break;
+                          case TrendRange.oneMonth: label = '1M'; break;
+                          case TrendRange.threeMonths: label = '3M'; break;
+                          case TrendRange.sixMonths: label = '6M'; break;
+                          case TrendRange.oneYear: label = '1Y'; break;
                         }
-                      },
-                      labelStyle: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: isSelected
-                            ? Colors.white
-                            : (isDark ? Colors.white70 : Colors.black87),
-                      ),
-                      selectedColor: AppColors.primary,
-                      backgroundColor: isDark ? AppColors.surfaceVariant : const Color(0xFFF2F2F7),
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: ChoiceChip(
+                            label: Text(label),
+                            selected: isSelected,
+                            onSelected: (val) {
+                              if (val) ref.read(selectedTrendRangeProvider.notifier).state = range;
+                            },
+                            labelStyle: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: isSelected ? Colors.white : (isDark ? Colors.white70 : Colors.black87),
+                            ),
+                            selectedColor: AppColors.primary,
+                            backgroundColor: isDark ? AppColors.surfaceVariant : const Color(0xFFF2F2F7),
+                          ),
+                        );
+                      }).toList(),
                     ),
-                  );
-                }).toList(),
-              ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    color: isDark ? AppColors.surfaceVariant : const Color(0xFFF2F2F7),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  padding: const EdgeInsets.all(3),
+                  child: Row(
+                    children: [
+                      _ChartTypeButton(icon: Icons.bar_chart_rounded, tooltip: 'Bar', isSelected: selectedChartType == ChartType.bar, onTap: () => ref.read(selectedChartTypeProvider.notifier).state = ChartType.bar),
+                      _ChartTypeButton(icon: Icons.show_chart_rounded, tooltip: 'Line', isSelected: selectedChartType == ChartType.line, onTap: () => ref.read(selectedChartTypeProvider.notifier).state = ChartType.line),
+                      _ChartTypeButton(icon: Icons.area_chart_rounded, tooltip: 'Area', isSelected: selectedChartType == ChartType.area, onTap: () => ref.read(selectedChartTypeProvider.notifier).state = ChartType.area),
+                    ],
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 20),
-
-            // ── Bar Chart ─────────────────────────────────────
-            SizedBox(
-              height: 180,
-              child: BarChart(
-                BarChartData(
-                  alignment: BarChartAlignment.spaceAround,
-                  maxY: points.fold<double>(
-                          0,
-                          (max, p) => p.income > max
-                              ? p.income
-                              : (p.expense > max ? p.expense : max)) *
-                      1.3,
-                  barTouchData: BarTouchData(
-                    touchTooltipData: BarTouchTooltipData(
-                      getTooltipColor: (_) => isDark ? AppColors.surface : Colors.white,
-                      getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                        final point = points[group.x];
-                        return BarTooltipItem(
-                          '${point.label}\n',
-                          AppTextStyles.labelSmall.copyWith(color: AppColors.textSecondary),
-                          children: [
-                            TextSpan(
-                              text: rodIndex == 0
-                                  ? CurrencyUtils.formatCompact(point.income)
-                                  : CurrencyUtils.formatCompact(point.expense),
-                              style: AppTextStyles.labelMedium.copyWith(
-                                color: rodIndex == 0 ? AppColors.credit : AppColors.debit,
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
-                  titlesData: FlTitlesData(
-                    leftTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false)),
-                    rightTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false)),
-                    topTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false)),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        getTitlesWidget: (x, meta) {
-                          if (x.toInt() >= points.length || x.toInt() < 0) {
-                            return const SizedBox.shrink();
-                          }
-                          final point = points[x.toInt()];
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 6),
-                            child: Text(
-                              point.label.split(' ').first,
-                              style: AppTextStyles.labelSmall,
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                  gridData: FlGridData(
-                    show: true,
-                    getDrawingHorizontalLine: (_) => FlLine(
-                      color: (isDark ? AppColors.border : const Color(0xFFE5E5EA)).withValues(alpha: 0.5),
-                      strokeWidth: 0.5,
-                    ),
-                    drawVerticalLine: false,
-                  ),
-                  borderData: FlBorderData(show: false),
-                  barGroups: points.asMap().entries.map((entry) {
-                    final i = entry.key;
-                    final p = entry.value;
-                    return BarChartGroupData(
-                      x: i,
-                      barRods: [
-                        BarChartRodData(
-                          toY: p.income,
-                          color: AppColors.credit,
-                          width: points.length > 8 ? 6 : 10,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        BarChartRodData(
-                          toY: p.expense,
-                          color: AppColors.debit,
-                          width: points.length > 8 ? 6 : 10,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ],
-                    );
-                  }).toList(),
-                ),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 350),
+              child: SizedBox(
+                key: ValueKey(selectedChartType),
+                height: 180,
+                child: selectedChartType == ChartType.bar
+                    ? _buildBarChart(isDark, safeMaxY)
+                    : _buildLineChart(isDark, safeMaxY, isArea: selectedChartType == ChartType.area),
               ),
             ),
           ],
@@ -973,7 +950,127 @@ class _BarChart extends ConsumerWidget {
       ),
     );
   }
+
+  Widget _buildBarChart(bool isDark, double safeMaxY) {
+    return BarChart(BarChartData(
+      alignment: BarChartAlignment.spaceAround,
+      maxY: safeMaxY,
+      barTouchData: BarTouchData(
+        touchTooltipData: BarTouchTooltipData(
+          getTooltipColor: (_) => isDark ? AppColors.surface : Colors.white,
+          getTooltipItem: (group, groupIndex, rod, rodIndex) {
+            final idx = group.x;
+            if (idx < 0 || idx >= points.length) return null;
+            final point = points[idx];
+            return BarTooltipItem(
+              '${point.label}\n',
+              AppTextStyles.labelSmall.copyWith(color: AppColors.textSecondary),
+              children: [TextSpan(
+                text: rodIndex == 0 ? CurrencyUtils.formatCompact(point.income) : CurrencyUtils.formatCompact(point.expense),
+                style: AppTextStyles.labelMedium.copyWith(color: rodIndex == 0 ? AppColors.credit : AppColors.debit),
+              )],
+            );
+          },
+        ),
+      ),
+      titlesData: FlTitlesData(
+        leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        bottomTitles: AxisTitles(sideTitles: SideTitles(
+          showTitles: true,
+          getTitlesWidget: (x, meta) {
+            final idx = x.toInt();
+            if (idx < 0 || idx >= points.length) return const SizedBox.shrink();
+            return Padding(padding: const EdgeInsets.only(top: 6), child: Text(points[idx].label.split(' ').first, style: AppTextStyles.labelSmall));
+          },
+        )),
+      ),
+      gridData: FlGridData(show: true, getDrawingHorizontalLine: (_) => FlLine(color: (isDark ? AppColors.border : const Color(0xFFE5E5EA)).withValues(alpha: 0.5), strokeWidth: 0.5), drawVerticalLine: false),
+      borderData: FlBorderData(show: false),
+      barGroups: points.asMap().entries.map((entry) {
+        final i = entry.key;
+        final p = entry.value;
+        return BarChartGroupData(x: i, barRods: [
+          BarChartRodData(toY: p.income.clamp(0.0, safeMaxY), color: AppColors.credit, width: points.length > 8 ? 6 : 10, borderRadius: BorderRadius.circular(4)),
+          BarChartRodData(toY: p.expense.clamp(0.0, safeMaxY), color: AppColors.debit, width: points.length > 8 ? 6 : 10, borderRadius: BorderRadius.circular(4)),
+        ]);
+      }).toList(),
+    ));
+  }
+
+  Widget _buildLineChart(bool isDark, double safeMaxY, {required bool isArea}) {
+    final incomeSpots = <FlSpot>[];
+    final expenseSpots = <FlSpot>[];
+    for (int i = 0; i < points.length; i++) {
+      incomeSpots.add(FlSpot(i.toDouble(), points[i].income.clamp(0.0, safeMaxY)));
+      expenseSpots.add(FlSpot(i.toDouble(), points[i].expense.clamp(0.0, safeMaxY)));
+    }
+    return LineChart(LineChartData(
+      minY: 0, maxY: safeMaxY, clipData: const FlClipData.all(),
+      lineTouchData: LineTouchData(
+        touchTooltipData: LineTouchTooltipData(
+          getTooltipColor: (_) => isDark ? AppColors.surface : Colors.white,
+          getTooltipItems: (spots) => spots.map((spot) {
+            final idx = spot.x.toInt();
+            if (idx < 0 || idx >= points.length) return null;
+            final isIncome = spot.barIndex == 0;
+            return LineTooltipItem('${points[idx].label}\n${isIncome ? "In" : "Out"}: ${CurrencyUtils.formatCompact(spot.y)}', AppTextStyles.labelSmall.copyWith(color: isIncome ? AppColors.credit : AppColors.debit));
+          }).toList(),
+        ),
+      ),
+      titlesData: FlTitlesData(
+        leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, getTitlesWidget: (x, meta) {
+          final idx = x.toInt();
+          if (idx < 0 || idx >= points.length) return const SizedBox.shrink();
+          return Padding(padding: const EdgeInsets.only(top: 6), child: Text(points[idx].label.split(' ').first, style: AppTextStyles.labelSmall));
+        })),
+      ),
+      gridData: FlGridData(show: true, getDrawingHorizontalLine: (_) => FlLine(color: (isDark ? AppColors.border : const Color(0xFFE5E5EA)).withValues(alpha: 0.5), strokeWidth: 0.5), drawVerticalLine: false),
+      borderData: FlBorderData(show: false),
+      lineBarsData: [
+        LineChartBarData(
+          spots: incomeSpots, isCurved: true, curveSmoothness: 0.3, color: AppColors.credit, barWidth: 2.5,
+          dotData: FlDotData(show: points.length <= 8, getDotPainter: (_, __, ___, ____) => FlDotCirclePainter(radius: 4, color: AppColors.credit, strokeWidth: 2, strokeColor: isDark ? AppColors.surface : Colors.white)),
+          belowBarData: isArea ? BarAreaData(show: true, gradient: LinearGradient(colors: [AppColors.credit.withValues(alpha: 0.3), AppColors.credit.withValues(alpha: 0.0)], begin: Alignment.topCenter, end: Alignment.bottomCenter)) : BarAreaData(show: false),
+        ),
+        LineChartBarData(
+          spots: expenseSpots, isCurved: true, curveSmoothness: 0.3, color: AppColors.debit, barWidth: 2.5,
+          dotData: FlDotData(show: points.length <= 8, getDotPainter: (_, __, ___, ____) => FlDotCirclePainter(radius: 4, color: AppColors.debit, strokeWidth: 2, strokeColor: isDark ? AppColors.surface : Colors.white)),
+          belowBarData: isArea ? BarAreaData(show: true, gradient: LinearGradient(colors: [AppColors.debit.withValues(alpha: 0.25), AppColors.debit.withValues(alpha: 0.0)], begin: Alignment.topCenter, end: Alignment.bottomCenter)) : BarAreaData(show: false),
+        ),
+      ],
+    ));
+  }
 }
+
+class _ChartTypeButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final bool isSelected;
+  final VoidCallback onTap;
+  const _ChartTypeButton({required this.icon, required this.tooltip, required this.isSelected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(color: isSelected ? AppColors.primary : Colors.transparent, borderRadius: BorderRadius.circular(8)),
+          child: Icon(icon, size: 18, color: isSelected ? Colors.white : AppColors.textSecondary),
+        ),
+      ),
+    );
+  }
+}
+
 
 class _LegendDot extends StatelessWidget {
   final Color color;
@@ -1057,12 +1154,14 @@ class _QuickCategorizationCard extends ConsumerWidget {
                         final updated = tx.copyWith(category: cat.name);
                         await ref.read(transactionRepositoryProvider).update(updated);
                         
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Transaction categorized as ${cat.name}'),
-                            duration: const Duration(seconds: 2),
-                          ),
-                        );
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Transaction categorized as ${cat.name}'),
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                        }
                       },
                       labelStyle: TextStyle(
                         fontSize: 12,

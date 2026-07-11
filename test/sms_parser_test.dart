@@ -94,5 +94,38 @@ void main() {
         expect(result?.amount, 99.99);
       });
     });
+
+    // ── Merchant Extraction & Balance Parsing ────────────────────────────────
+    group('Merchant and Balance parsing', () {
+      test('parses Lenskart payment correctly', () {
+        const sms =
+            'Dear Customer, Rs.998.00 paid To: LENSKART SOLUTIONS LIMITED / Fro. Clear Balance. Ref No: 123456.';
+        final result = parser.parse(body: sms, sender: 'SBIINB');
+        expect(result, isNotNull);
+        expect(result!.amount, 998.0);
+        expect(result.isDebit, true);
+        expect(result.merchant, 'Lenskart Solutions Limited');
+      });
+
+      test('parses balance SMS correctly', () {
+        const sms =
+            'Clear Balance in Your A/C XX1234 is INR 526.08 on 11-07-2026. Ref 123456';
+        final result = parser.parseBalance(body: sms, sender: 'SBIINB');
+        expect(result, isNotNull);
+        expect(result!.balance, 526.08);
+        expect(result.bank, 'SBI');
+        expect(result.accountSuffix, '1234');
+      });
+
+      test('parses alternative balance format', () {
+        const sms =
+            'Avl Bal: INR 1,234.56 on your HDFC Bank Ac XX5678';
+        final result = parser.parseBalance(body: sms, sender: 'HDFCBK');
+        expect(result, isNotNull);
+        expect(result!.balance, 1234.56);
+        expect(result.bank, 'HDFC');
+        expect(result.accountSuffix, '5678');
+      });
+    });
   });
 }

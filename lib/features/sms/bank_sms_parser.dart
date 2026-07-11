@@ -26,6 +26,21 @@ class SmsParseResult {
   });
 }
 
+/// Parsed balance from a bank SMS.
+class BalanceParseResult {
+  final double balance;
+  final String bank;
+  final String? accountSuffix; // last 4 digits of account
+  final DateTime parsedAt;
+
+  const BalanceParseResult({
+    required this.balance,
+    required this.bank,
+    this.accountSuffix,
+    required this.parsedAt,
+  });
+}
+
 class BankSmsParser {
   BankSmsParser._();
   static final BankSmsParser instance = BankSmsParser._();
@@ -50,6 +65,8 @@ class BankSmsParser {
     'IDFCBK': 'IDFC First',
     'SCBANK': 'Standard Chartered',
     'PAYTMB': 'Paytm Payments Bank',
+    'MUCBNK': 'MUCB',
+    'MUCB': 'MUCB',
   };
 
   // ── Amount regex patterns ───────────────────────────────────────────────
@@ -71,15 +88,16 @@ class BankSmsParser {
   );
 
   // ── HIGH PRIORITY: UPI To:NAME/From: pattern (most Indian banks) ─────────
-  // Matches: UPI/REF/To:PATEL ARYAN LALJIBHAI/From:PAT
-  // For DEBITS → extract the "To:" name (who you paid)
-  // For CREDITS → extract the "From:" name (who paid you)
+  // FIXED: Now handles full merchant names including "LENSKART SOLUTIONS LIMITED"
+  // Pattern captures everything between "To:" and the "/" separator or line end
+  // Also handles "/Fro." abbreviation used by some banks (MUCB, etc.)
   static final _upiToPattern = RegExp(
-    r'(?:UPI[/\s]*\d+[/\s]*)?To[:\s]+([A-Za-z][A-Za-z\s]{1,50}?)(?:\s*/\s*From|\s*\.\s|\s*Clear|\s*$)',
+    r'(?:UPI[/\s]*[\w]+[/\s]*)?To[:\s]+([A-Za-z0-9][A-Za-z0-9\s\.\-\_&]{2,80}?)(?:\s*/\s*(?:From|Fro[m\.]?)|(?:\.?\s*Clear\b)|\.\s*$|\s*$)',
     caseSensitive: false,
   );
+
   static final _upiFromPattern = RegExp(
-    r'From[:\s]+([A-Za-z][A-Za-z\s\-\.]{2,50}?)(?:\s*/|\s+Ref|\s+on\b|\s*\.\s|\s*$)',
+    r'From[:\s]+([A-Za-z][A-Za-z\s\-\.]{2,50}?)(?:\s*/|(?:\s+Ref)|\s+on\b|\.\s|\.$|\s*$)',
     caseSensitive: false,
   );
 
@@ -104,6 +122,37 @@ class BankSmsParser {
     RegExp(r'(\d{2})-([A-Za-z]{3})-(\d{4})'),
     RegExp(r'(\d{2})[/-](\d{2})[/-](\d{2})'),
   ];
+
+  // ── Balance patterns — extracts "Clear Balance in Your A/C is INR 526.08"
+  //    or "Avl Bal: INR 1,234.56" or "Available balance: Rs. 5,000" ─────────
+  static final _balancePatterns = [
+    RegExp(
+      r'(?:Clear\s+)?[Bb]al(?:ance)?\s+(?:in\s+[Yy]our\s+[Aa]/[Cc]\s+is|[:\s]+)\s*(?:INR|Rs\.?|₹)\s*([\d,]+\.?\d*)',
+      caseSensitive: false,
+    ),
+    RegExp(
+      r'[Aa]vl\.?\s*[Bb]al(?:ance)?[:\s]+(?:INR|Rs\.?|₹)\s*([\d,]+\.?\d*)',
+      caseSensitive: false,
+    ),
+    RegExp(
+      r'[Aa]vailable\s+[Bb]al(?:ance)?[:\s]+(?:INR|Rs\.?|₹)\s*([\d,]+\.?\d*)',
+      caseSensitive: false,
+    ),
+    RegExp(
+      r'[Aa]/[Cc]\s+[Bb]al(?:ance)?[:\s]+(?:INR|Rs\.?|₹)\s*([\d,]+\.?\d*)',
+      caseSensitive: false,
+    ),
+    RegExp(
+      r'(?:INR|Rs\.?|₹)\s*([\d,]+\.?\d*)\s+(?:is\s+your\s+)?(?:avl|available)?\s*[Bb]al',
+      caseSensitive: false,
+    ),
+  ];
+
+  // ── Account number pattern ──────────────────────────────────────────────
+  static final _accountPattern = RegExp(
+    r'(?:a/c|acct|account)\s+(?:no\.?\s+)?(?:XX+|x+)(\d{4})',
+    caseSensitive: false,
+  );
 
   // ── Month abbreviation → number ─────────────────────────────────────────
   static const _months = {
@@ -144,6 +193,37 @@ class BankSmsParser {
     );
   }
 
+  /// Attempts to parse bank balance from an SMS.
+  /// Returns null if no balance information found.
+  BalanceParseResult? parseBalance({
+    required String body,
+    required String sender,
+  }) {
+    final bank = _identifyBank(sender, body) ?? 'Bank';
+
+    double? balance;
+    for (final pattern in _balancePatterns) {
+      final match = pattern.firstMatch(body);
+      if (match != null) {
+        final balStr = match.group(1)?.replaceAll(',', '');
+        balance = double.tryParse(balStr ?? '');
+        if (balance != null) break;
+      }
+    }
+
+    if (balance == null) return null;
+
+    final accountMatch = _accountPattern.firstMatch(body);
+    final accountSuffix = accountMatch?.group(1);
+
+    return BalanceParseResult(
+      balance: balance,
+      bank: bank,
+      accountSuffix: accountSuffix,
+      parsedAt: DateTime.now(),
+    );
+  }
+
   String? _identifyBank(String sender, String body) {
     // 1. Clean sender ID to extract the core alphabetic header (usually 6 letters)
     // E.g., "JD-MUCBNK-S" -> ["JD", "MUCBNK", "S"]
@@ -176,7 +256,6 @@ class BankSmsParser {
 
     if (hasAmount && isTx && hasAcct) {
       // It is a valid transaction! Identify bank by cleaning the header
-      // E.g. "MUCBNK" -> "MUCB"
       if (header.isNotEmpty) {
         String bankName = header;
         // Strip common suffixes
@@ -204,9 +283,6 @@ class BankSmsParser {
 
   String? _extractMerchant(String body, {bool isDebit = true}) {
     // ── STEP 1: High-priority UPI To:/From: pattern ──────────────────────
-    // Most Indian bank SMS: "UPI/REF/To:RECIPIENT NAME/From:BANK_SHORT"
-    // For debits → who YOU paid = "To:" field
-    // For credits → who PAID you = "From:" field
     if (isDebit) {
       final toMatch = _upiToPattern.firstMatch(body);
       if (toMatch != null) {
@@ -226,12 +302,10 @@ class BankSmsParser {
     }
 
     // ── STEP 2: Also try the other direction as fallback ─────────────────
-    // (e.g. some banks flip the To/From order)
     if (isDebit) {
       final fromMatch = _upiFromPattern.firstMatch(body);
       if (fromMatch != null) {
         final name = fromMatch.group(1)?.trim();
-        // Only use From: for debit if it looks like a real name (not a bank code)
         if (name != null && name.length > 4 && !_isNoise(name) && !_looksLikeBankCode(name)) {
           return _cleanMerchantName(name);
         }
@@ -266,8 +340,14 @@ class BankSmsParser {
       'your', 'the', 'on', 'at', 'of', 'for', 'a', 'an', 'is', 'are',
       'bank', 'ref', 'no', 'transaction', 'amount', 'balance', 'account',
       'upi', 'neft', 'imps', 'rtgs', 'inr', 'rs', 'clear', 'info',
+      'report', 'fro', 'from', 'limited', 'solutions', // added noise
     };
-    return noiseWords.contains(lower) || lower.length <= 2;
+    // Check for exact noise match
+    if (noiseWords.contains(lower)) return true;
+    if (lower.length <= 2) return true;
+    // Check if name is purely numeric
+    if (RegExp(r'^\d+$').hasMatch(lower)) return true;
+    return false;
   }
 
   /// Returns true if name looks like a bank short code (e.g. "PAT", "SBI", "HDFC")
@@ -278,9 +358,25 @@ class BankSmsParser {
     return false;
   }
 
-  /// Clean up extracted merchant name — trim, title-case, remove trailing dots.
+  /// Clean up extracted merchant name — trim, title-case, remove trailing dots/slashes.
   String _cleanMerchantName(String name) {
-    final cleaned = name.trim().replaceAll(RegExp(r'\s+'), ' ').replaceAll(RegExp(r'[\./]+$'), '').trim();
+    // Remove trailing slashes, dots, "Fro", "From" artifacts
+    String cleaned = name.trim()
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(RegExp(r'[\.\/]+$'), '')
+        .replaceAll(RegExp(r'\s*/?[Ff]ro\.?\s*$'), '') // remove trailing "Fro."
+        .trim();
+
+    // Remove trailing noise words that crept in
+    final trailingNoise = RegExp(
+      r'\s+(fro|from|clear|balance|limited|solutions)\s*$',
+      caseSensitive: false,
+    );
+    cleaned = cleaned.replaceAll(trailingNoise, '').trim();
+
+    // If the result is a noise word, return as-is (caller will fall through)
+    if (_isNoise(cleaned)) return name.trim();
+
     // Title-case if all upper
     if (cleaned == cleaned.toUpperCase() && cleaned.length > 3) {
       return cleaned.split(' ').map((w) {

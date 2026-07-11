@@ -53,6 +53,27 @@ service cloud.firestore {
       }
     }
 
+    // ── Stable user ID mapping (email → consistent SQLite user_id) ──────────
+    // Anyone can read their own stable ID (needed after reinstall).
+    // First write creates the ID; subsequent writes update timestamp only.
+    match /user_stable_ids/{email} {
+      allow read: if true; // Public read so we can look up by email
+      allow create: if true; // First-time creation (unauthenticated, before login)
+      allow update: if request.auth != null; // Only update if logged in
+    }
+
+    // ── Firebase UID → Stable UID mapping (for future cloud sync) ───────────
+    match /firebase_uid_map/{firebaseUid} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == firebaseUid;
+    }
+
+    // ── Brevo / App Config (read-only for authenticated users) ───────────────
+    match /config/{configId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
     // ── Deny all other access ─────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;

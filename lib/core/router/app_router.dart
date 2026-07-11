@@ -14,6 +14,7 @@ import '../../features/savings/savings_screen.dart';
 import '../../features/categories/categories_screen.dart';
 import '../../features/profile/profile_screen.dart';
 import '../../shared/widgets/main_shell.dart';
+import '../../features/balance/balance_check_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authStateProvider);
@@ -89,6 +90,11 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/categories',
             name: 'categories',
             builder: (context, state) => const CategoriesScreen(),
+          ),
+          GoRoute(
+            path: '/balance',
+            name: 'balance',
+            builder: (context, state) => const BalanceCheckScreen(),
           ),
         ],
       ),
