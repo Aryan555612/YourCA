@@ -711,6 +711,7 @@ class _ExportDialogState extends ConsumerState<_ExportDialog> {
                   onPressed: _isLoading ? null : _export,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
+                    minimumSize: const Size(120, 48), // Explicitly override the global theme's double.infinity width
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),

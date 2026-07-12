@@ -191,12 +191,21 @@ class MerchantBreakdownScreen extends ConsumerWidget {
                   groups.putIfAbsent(tx.merchant, () => []).add(tx);
                 }
 
-                // Calculate sums and sort
+                // Sort transactions within each merchant group by date descending (latest first)
+                for (final list in groups.values) {
+                  list.sort((a, b) => b.date.compareTo(a.date));
+                }
+
+                // Calculate sums and sort groups by the date of their most recent transaction (latest first)
                 final merchantSums = groups.entries.map((entry) {
                   final sum = entry.value.fold(0.0, (s, t) => s + t.amount);
                   return MapEntry(entry.key, sum);
                 }).toList()
-                  ..sort((a, b) => b.value.compareTo(a.value));
+                  ..sort((a, b) {
+                    final latestA = groups[a.key]!.first.date;
+                    final latestB = groups[b.key]!.first.date;
+                    return latestB.compareTo(latestA);
+                  });
 
                 return ListView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),

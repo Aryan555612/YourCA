@@ -23,14 +23,32 @@ final routerProvider = Provider<GoRouter>((ref) {
     initialLocation: '/',
     debugLogDiagnostics: false,
     redirect: (context, state) {
+      if (authState.isLoading) return null; // Wait for loading to finish to prevent flickering
+
       final isAuthenticated = authState.valueOrNull != null;
       final isAuthRoute = state.matchedLocation.startsWith('/auth');
 
-      if (!isAuthenticated && !isAuthRoute) return '/auth/email_otp';
-      if (isAuthenticated && isAuthRoute) return '/dashboard';
+      if (!isAuthenticated && !isAuthRoute && state.matchedLocation != '/') {
+        return '/auth/email_otp';
+      }
+      if (!isAuthenticated && state.matchedLocation == '/') {
+        return '/auth/email_otp';
+      }
+      if (isAuthenticated && (isAuthRoute || state.matchedLocation == '/')) {
+        return '/dashboard';
+      }
       return null;
     },
     routes: [
+      // Splash/Loading route to hold initial auth resolution
+      GoRoute(
+        path: '/',
+        builder: (context, state) => const Scaffold(
+          body: Center(
+            child: CircularProgressIndicator(),
+          ),
+        ),
+      ),
       // ── Auth routes ─────────────────────────────────────────
       GoRoute(
         path: '/auth/email_otp',
