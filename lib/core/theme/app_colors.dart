@@ -50,6 +50,7 @@ abstract class AppColors {
   static const Color catEducation = Color(0xFF70D6FF);
   static const Color catTravel = Color(0xFFFFD166);
   static const Color catIncome = Color(0xFF2EC4B6);
+  static const Color catPerson = Color(0xFFC58BF2);
   static const Color catOther = Color(0xFF8E8E93);
 
   // Gradients

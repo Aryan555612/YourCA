@@ -16,6 +16,9 @@ import 'bank_sms_parser.dart';
 
 /// Provider that starts the background SMS listener on Android.
 /// No-op on iOS and Web.
+final pendingCategorizationProvider = StateProvider<Transaction?>((ref) => null);
+final pendingConfirmTxIdsProvider = StateProvider<Set<String>>((ref) => {});
+
 final smsListenerProvider = Provider<SmsListenerService>((ref) {
   return SmsListenerService(ref);
 });
@@ -26,6 +29,30 @@ class SmsListenerService {
   bool _isListening = false;
 
   SmsListenerService(this._ref);
+
+  String autoSelectCategory(String merchant) {
+    final lower = merchant.toLowerCase().trim();
+    final companyKeywords = [
+      'flipkart', 'amazon', 'myntra', 'ajio', 'meesho', 'nykaa',
+      'bigbasket', 'grofers', 'blinkit', 'instamart', 'zepto',
+      'dmart', 'reliance', 'tata', 'jiomart', 'swiggy', 'zomato',
+      'dominos', 'pizza', 'mcdonalds', 'kfc', 'starbucks', 'uber',
+      'ola', 'rapido', 'redbus', 'irctc', 'netflix', 'spotify',
+      'jio', 'airtel', 'bsnl', 'vi', 'vodafone', 'electricity',
+      'paytm', 'phonepe', 'gpay', 'razorpay', 'billdesk', 'retail',
+      'limited', 'ltd', 'private', 'pvt', 'corp', 'co', 'store',
+      'supermarket', 'mart', 'hotel', 'restaurant', 'cafe', 'bazaar',
+      'services', 'solutions', 'technologies', 'infotech', 'agency',
+      'enterprise', 'enterprises', 'wholesale', 'distributor', 'distribution',
+      'e-kart', 'ekart', 'pay', 'shop', 'online'
+    ];
+    for (final kw in companyKeywords) {
+      if (lower.contains(kw)) {
+        return 'Shopping';
+      }
+    }
+    return 'Person';
+  }
 
   /// Start listening for incoming SMS on Android.
   void start() {
@@ -84,15 +111,25 @@ class SmsListenerService {
       bankReference: result.reference,
     );
 
-    await _ref.read(transactionRepositoryProvider).add(tx);
-
-    // Trigger local notification with quick category choice buttons
     if (category == 'Other' && tx.type == TransactionType.debit) {
-      await NotificationService.instance.showCategorizationNotification(
-        txId: tx.id,
-        amount: tx.amount,
-        merchant: tx.merchant,
-      );
+      final autoCat = autoSelectCategory(tx.merchant);
+      final txWithAuto = tx.copyWith(category: autoCat);
+
+      await _ref.read(transactionRepositoryProvider).add(txWithAuto);
+      _ref.read(pendingConfirmTxIdsProvider.notifier).update((state) => {...state, tx.id});
+
+      final isForeground = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+      if (isForeground) {
+        _ref.read(pendingCategorizationProvider.notifier).state = txWithAuto;
+      } else {
+        await NotificationService.instance.showCategorizationNotification(
+          txId: tx.id,
+          amount: tx.amount,
+          merchant: tx.merchant,
+        );
+      }
+    } else {
+      await _ref.read(transactionRepositoryProvider).add(tx);
     }
   }
 }

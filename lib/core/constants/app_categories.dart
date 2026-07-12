@@ -115,6 +115,12 @@ class AppCategories {
       ],
     ),
     CategoryInfo(
+      name: 'Person',
+      emoji: '👤',
+      color: AppColors.catPerson,
+      keywords: [],
+    ),
+    CategoryInfo(
       name: 'Other',
       emoji: '📦',
       color: AppColors.catOther,
