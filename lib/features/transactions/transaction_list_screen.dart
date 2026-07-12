@@ -491,7 +491,7 @@ class _ExportDialogState extends ConsumerState<_ExportDialog> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: const Text('No transactions found in the selected range.'),
-              backgroundColor: AppColors.error,
+              backgroundColor: AppColors.debit,
             ),
           );
         }
@@ -543,7 +543,7 @@ class _ExportDialogState extends ConsumerState<_ExportDialog> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error exporting file: $e'),
-            backgroundColor: AppColors.error,
+            backgroundColor: AppColors.debit,
           ),
         );
       }
