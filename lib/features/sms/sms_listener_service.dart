@@ -183,7 +183,7 @@ class SmsListenerService {
         }
 
         // Create new transaction
-        final category = autoSelectCategory(
+        final category = SmsListenerService.autoSelectCategory(
           result.merchant,
           result.isDebit ? TransactionType.debit : TransactionType.credit,
         );
@@ -258,7 +258,7 @@ class SmsListenerService {
       bankReference: result.reference,
     );
 
-    final autoCat = autoSelectCategory(tx.merchant, tx.type);
+    final autoCat = SmsListenerService.autoSelectCategory(tx.merchant, tx.type);
     final txWithAuto = tx.copyWith(category: autoCat);
 
     await _ref.read(transactionRepositoryProvider).add(txWithAuto);
