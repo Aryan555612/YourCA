@@ -28,6 +28,39 @@ class DatabaseHelper {
       whereArgs: [DateTime(2026, 7, 12).toIso8601String()],
     );
 
+    // SQLite Cleanup: Delete duplicate rows in transactions table
+    // 1. Deduplicate by bank_reference (if not null)
+    await _database!.rawDelete('''
+      DELETE FROM transactions 
+      WHERE bank_reference IS NOT NULL 
+        AND id NOT IN (
+          SELECT MIN(id) 
+          FROM transactions 
+          GROUP BY bank_reference
+        )
+    ''');
+
+    // 2. Deduplicate by raw_text (if not null)
+    await _database!.rawDelete('''
+      DELETE FROM transactions 
+      WHERE raw_text IS NOT NULL 
+        AND id NOT IN (
+          SELECT MIN(id) 
+          FROM transactions 
+          GROUP BY raw_text
+        )
+    ''');
+
+    // 3. Deduplicate by unique key: user_id, amount, date, merchant
+    await _database!.rawDelete('''
+      DELETE FROM transactions 
+      WHERE id NOT IN (
+        SELECT MIN(id) 
+        FROM transactions 
+        GROUP BY user_id, amount, date, merchant
+      )
+    ''');
+
     return _database!;
   }
 
