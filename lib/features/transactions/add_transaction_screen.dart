@@ -244,8 +244,8 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen>
         labelStyle: AppTextStyles.titleMedium,
         unselectedLabelColor: AppColors.textSecondary,
         tabs: const [
-          Tab(text: '↑  Debit / Expense'),
-          Tab(text: '↓  Credit / Income'),
+          Tab(text: '↑  Send'),
+          Tab(text: '↓  Receive'),
         ],
       ),
     );

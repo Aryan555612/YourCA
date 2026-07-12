@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sqflite/sqflite.dart' hide Transaction;
 import '../../core/services/database_helper.dart';
@@ -118,7 +119,7 @@ class TransactionRepository {
   }
 
   // ── Add single transaction ─────────────────────────────────────────────
-  Future<String> add(Transaction tx) async {
+  Future<String> add(Transaction tx, {bool syncToCloud = true}) async {
     final db = await _db;
     await db.insert(
       'transactions',
@@ -126,11 +127,22 @@ class TransactionRepository {
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
     DatabaseHelper.instance.notifyChange('transactions');
+
+    if (syncToCloud) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(tx.userId)
+            .collection('transactions')
+            .doc(tx.id)
+            .set(tx.toFirestore());
+      } catch (_) {}
+    }
     return tx.id;
   }
 
   // ── Bulk add (CSV import) ──────────────────────────────────────────────
-  Future<void> addBatch(List<Transaction> transactions) async {
+  Future<void> addBatch(List<Transaction> transactions, {bool syncToCloud = true}) async {
     if (transactions.isEmpty) return;
     final db = await _db;
     final batch = db.batch();
@@ -143,10 +155,25 @@ class TransactionRepository {
     }
     await batch.commit(noResult: true);
     DatabaseHelper.instance.notifyChange('transactions');
+
+    if (syncToCloud) {
+      try {
+        final firestoreBatch = FirebaseFirestore.instance.batch();
+        for (final tx in transactions) {
+          final docRef = FirebaseFirestore.instance
+              .collection('users')
+              .doc(tx.userId)
+              .collection('transactions')
+              .doc(tx.id);
+          firestoreBatch.set(docRef, tx.toFirestore());
+        }
+        await firestoreBatch.commit();
+      } catch (_) {}
+    }
   }
 
   // ── Update transaction ─────────────────────────────────────────────────
-  Future<void> update(Transaction tx) async {
+  Future<void> update(Transaction tx, {bool syncToCloud = true}) async {
     final db = await _db;
     await db.update(
       'transactions',
@@ -155,10 +182,21 @@ class TransactionRepository {
       whereArgs: [tx.id],
     );
     DatabaseHelper.instance.notifyChange('transactions');
+
+    if (syncToCloud) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(tx.userId)
+            .collection('transactions')
+            .doc(tx.id)
+            .set(tx.toFirestore(), SetOptions(merge: true));
+      } catch (_) {}
+    }
   }
 
   // ── Delete transaction ─────────────────────────────────────────────────
-  Future<void> delete(String userId, String txId) async {
+  Future<void> delete(String userId, String txId, {bool syncToCloud = true}) async {
     final db = await _db;
     await db.delete(
       'transactions',
@@ -166,6 +204,17 @@ class TransactionRepository {
       whereArgs: [txId, userId],
     );
     DatabaseHelper.instance.notifyChange('transactions');
+
+    if (syncToCloud) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId)
+            .collection('transactions')
+            .doc(txId)
+            .delete();
+      } catch (_) {}
+    }
   }
 
   // ── Fetch single transaction ───────────────────────────────────────────

@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../shared/models/models.dart';
 import '../../shared/repositories/user_repository.dart';
+import '../../shared/repositories/transaction_repository.dart';
 
 // ── Firebase Auth instance ─────────────────────────────────────────────────
 final firebaseAuthProvider = Provider<FirebaseAuth>((ref) {
@@ -28,7 +29,14 @@ final authStateProvider = StreamProvider<User?>((ref) {
 const _stableUidPrefKey = 'stable_user_id';
 const _stableEmailPrefKey = 'stable_user_email';
 
-final stableUserIdProvider = StateProvider<String?>((ref) => null);
+final sharedPreferencesProvider = Provider<SharedPreferences>((ref) {
+  throw UnimplementedError('sharedPreferencesProvider must be overridden in ProviderScope');
+});
+
+final stableUserIdProvider = StateProvider<String?>((ref) {
+  final prefs = ref.watch(sharedPreferencesProvider);
+  return prefs.getString(_stableUidPrefKey);
+});
 
 // ── Current UID shortcut ───────────────────────────────────────────────────
 // Uses stableUserIdProvider first; falls back to Firebase UID only if stable
@@ -48,19 +56,6 @@ class AuthNotifier extends AsyncNotifier<void> {
   Future<void> build() async {
     _auth = ref.watch(firebaseAuthProvider);
     _userRepo = ref.watch(userRepositoryProvider);
-    // Restore stable ID from prefs on app start
-    await _restoreStableId();
-  }
-
-  // ── Restore stable user ID from local prefs ────────────────────────────
-  Future<void> _restoreStableId() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final savedId = prefs.getString(_stableUidPrefKey);
-      if (savedId != null) {
-        ref.read(stableUserIdProvider.notifier).state = savedId;
-      }
-    } catch (_) {}
   }
 
   // ── Generate deterministic stable UID from email ───────────────────────
@@ -109,9 +104,9 @@ class AuthNotifier extends AsyncNotifier<void> {
       // 1. Generate a random 6-digit verification code
       final code = (100000 + Random().nextInt(900000)).toString();
 
-      // 2. Save it to Firestore under the 'otps' collection
-      await FirebaseFirestore.instance.collection('otps').doc(email).set({
-        'code': code,
+      // 2. Save it to Firestore under the 'otps' collection with email_code as document ID
+      final docId = '${email.toLowerCase().trim()}_$code';
+      await FirebaseFirestore.instance.collection('otps').doc(docId).set({
         'expires_at': DateTime.now().add(const Duration(minutes: 10)).toIso8601String(),
       });
 
@@ -164,50 +159,92 @@ class AuthNotifier extends AsyncNotifier<void> {
   }) async {
     state = const AsyncLoading();
     try {
-      // 1. Attempt to write to the verification subcollection.
-      // Firestore Security Rules will reject this write (permission-denied)
-      // if the code is wrong OR if the OTP has expired.
-      try {
-        await FirebaseFirestore.instance
-            .collection('otps')
-            .doc(email)
-            .collection('attempts')
-            .doc('verify')
-            .set({
-          'enteredCode': otp,
-          'timestamp': FieldValue.serverTimestamp(),
-        });
-      } catch (e) {
-        // If write fails, the code is incorrect or has expired
-        throw Exception('Invalid or expired verification code. Please try again.');
+      final cleanEmail = email.toLowerCase().trim();
+      final docId = '${cleanEmail}_$otp';
+
+      // 1. Fetch the OTP document from Firestore
+      final doc = await FirebaseFirestore.instance
+          .collection('otps')
+          .doc(docId)
+          .get();
+
+      if (!doc.exists || doc.data() == null) {
+        throw Exception('Invalid verification code. Please try again.');
       }
 
-      // If we reach here, the write succeeded, meaning the code was correct!
+      final data = doc.data()!;
+      final expiresAtStr = data['expires_at'] as String? ?? '';
+      if (expiresAtStr.isEmpty || DateTime.now().isAfter(DateTime.parse(expiresAtStr))) {
+        throw Exception('Verification code has expired. Please try again.');
+      }
+
       // 2. Log in anonymously (works instantly on Spark plan with no card!)
       final credential = await _auth.signInAnonymously();
 
       // 3. Get or create the STABLE user ID for this email (KEY FIX)
       // This ensures the same email always maps to the same SQLite user_id,
       // even across reinstalls, re-logins, or different devices.
-      final stableUid = await _getOrCreateStableUid(email);
+      final stableUid = await _getOrCreateStableUid(cleanEmail);
 
       // 4. Save stable UID to SharedPreferences for offline use
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_stableUidPrefKey, stableUid);
-      await prefs.setString(_stableEmailPrefKey, email.toLowerCase().trim());
+      await prefs.setString(_stableEmailPrefKey, cleanEmail);
 
       // 5. Update the in-memory state provider
       ref.read(stableUserIdProvider.notifier).state = stableUid;
 
-      // 6. Ensure user profile in SQLite (using stable UID, NOT Firebase UID)
-      final existingProfile = await _userRepo.fetchProfile(stableUid);
-      if (existingProfile == null) {
-        await _userRepo.createProfile(UserProfile(
-          id: stableUid,
-          name: email.split('@').first,
-          phoneNumber: email,
-          createdAt: DateTime.now(),
-        ));
+      // 6. Restore profile and transactions from Firestore if available
+      UserProfile? cloudProfile;
+      try {
+        final profileDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(stableUid)
+            .get();
+        if (profileDoc.exists && profileDoc.data() != null) {
+          cloudProfile = UserProfile.fromFirestore(profileDoc.data()!, stableUid);
+        }
+      } catch (e) {
+        debugPrint('Error fetching user profile from Firestore: $e');
+      }
+
+      if (cloudProfile != null) {
+        await _userRepo.createProfile(cloudProfile, syncToCloud: false);
+      } else {
+        final existingProfile = await _userRepo.fetchProfile(stableUid);
+        if (existingProfile == null) {
+          await _userRepo.createProfile(
+            UserProfile(
+              id: stableUid,
+              name: cleanEmail.split('@').first,
+              phoneNumber: cleanEmail,
+              createdAt: DateTime.now(),
+            ),
+            syncToCloud: true,
+          );
+        }
+      }
+
+      // Restore transactions from Firestore
+      try {
+        final txsSnap = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(stableUid)
+            .collection('transactions')
+            .get();
+        if (txsSnap.docs.isNotEmpty) {
+          final transactions = txsSnap.docs
+              .map((doc) => Transaction.fromFirestore(doc.data(), doc.id))
+              .toList();
+          
+          // Import into SQLite locally without syncing back to Firestore
+          await ref.read(transactionRepositoryProvider).addBatch(
+                transactions,
+                syncToCloud: false,
+              );
+        }
+      } catch (e) {
+        debugPrint('Error restoring transactions from Firestore: $e');
       }
 
       // 7. Also store a mapping in Firestore linking Firebase UID → stable UID
@@ -218,20 +255,14 @@ class AuthNotifier extends AsyncNotifier<void> {
             .doc(credential.user!.uid)
             .set({
           'stable_uid': stableUid,
-          'email': email.toLowerCase().trim(),
+          'email': cleanEmail,
           'updated_at': DateTime.now().toIso8601String(),
         });
       } catch (_) {}
 
-      // 8. Clean up both the verification attempt and the parent OTP document
+      // 8. Clean up the OTP document
       try {
-        await FirebaseFirestore.instance
-            .collection('otps')
-            .doc(email)
-            .collection('attempts')
-            .doc('verify')
-            .delete();
-        await FirebaseFirestore.instance.collection('otps').doc(email).delete();
+        await FirebaseFirestore.instance.collection('otps').doc(docId).delete();
       } catch (e) {
         // Safe to ignore cleanup failures
       }

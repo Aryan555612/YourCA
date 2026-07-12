@@ -202,7 +202,7 @@ class _TxDetailBodyState extends ConsumerState<_TxDetailBody> {
         _DetailTile(
             icon: Icons.swap_vert_rounded,
             label: 'Type',
-            value: isDebit ? 'Debit / Expense' : 'Credit / Income'),
+            value: isDebit ? 'Send' : 'Receive'),
         _DetailTile(
             icon: Icons.source_outlined,
             label: 'Source',

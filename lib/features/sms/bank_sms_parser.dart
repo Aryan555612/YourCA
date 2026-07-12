@@ -336,6 +336,15 @@ class BankSmsParser {
   /// Returns true if the extracted name is noise/generic (not a real merchant).
   bool _isNoise(String name) {
     final lower = name.toLowerCase().trim();
+    if (lower.contains('report') ||
+        lower.contains('block') ||
+        lower.contains('unauthorized') ||
+        lower.contains('fraud') ||
+        lower.contains('if not done') ||
+        lower.contains('if not you')) {
+      return true;
+    }
+
     const noiseWords = {
       'your', 'the', 'on', 'at', 'of', 'for', 'a', 'an', 'is', 'are',
       'bank', 'ref', 'no', 'transaction', 'amount', 'balance', 'account',

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sqflite/sqflite.dart';
 import '../../core/services/database_helper.dart';
@@ -74,7 +75,7 @@ class UserRepository {
     return controller.stream;
   }
 
-  Future<void> createProfile(UserProfile profile) async {
+  Future<void> createProfile(UserProfile profile, {bool syncToCloud = true}) async {
     final db = await _db;
     await db.insert(
       'user_profiles',
@@ -82,9 +83,18 @@ class UserRepository {
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
     DatabaseHelper.instance.notifyChange('user_profiles');
+
+    if (syncToCloud) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(profile.id)
+            .set(profile.toFirestore(), SetOptions(merge: true));
+      } catch (_) {}
+    }
   }
 
-  Future<void> updateProfile(UserProfile profile) async {
+  Future<void> updateProfile(UserProfile profile, {bool syncToCloud = true}) async {
     final db = await _db;
     await db.update(
       'user_profiles',
@@ -93,6 +103,15 @@ class UserRepository {
       whereArgs: [profile.id],
     );
     DatabaseHelper.instance.notifyChange('user_profiles');
+
+    if (syncToCloud) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(profile.id)
+            .set(profile.toFirestore(), SetOptions(merge: true));
+      } catch (_) {}
+    }
   }
 
   // ── Merchant correction lookup ─────────────────────────────────────────

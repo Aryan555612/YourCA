@@ -708,7 +708,7 @@ class _SummarySection extends ConsumerWidget {
           children: [
             Expanded(
               child: SummaryCard(
-                label: 'Income',
+                label: 'Receive',
                 amount: summary.totalIncome,
                 icon: Icons.arrow_downward_rounded,
                 color: AppColors.credit,
@@ -718,7 +718,7 @@ class _SummarySection extends ConsumerWidget {
             const SizedBox(width: 12),
             Expanded(
               child: SummaryCard(
-                label: 'Expenses',
+                label: 'Send',
                 amount: summary.totalExpense,
                 icon: Icons.arrow_upward_rounded,
                 color: AppColors.debit,
@@ -774,7 +774,7 @@ class _CategoryChartState extends State<_CategoryChart> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Expense Breakdown', style: AppTextStyles.headlineSmall),
+            Text('Send Breakdown', style: AppTextStyles.headlineSmall),
             const SizedBox(height: 20),
             SizedBox(
               height: 200,

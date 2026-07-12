@@ -36,21 +36,13 @@ service cloud.firestore {
       }
     }
 
-    // ── OTP verification documents (Secure Write-Only verification) ─────────
-    match /otps/{email} {
-      // Anyone can generate/create an OTP doc, but NO ONE can read or update it.
-      allow create: if true;
-      allow read, update: if false;
-      // Only signed-in users can delete the OTP doc after successful login.
-      allow delete: if request.auth != null;
-
-      match /attempts/{attemptId} {
-        // Verification attempt only succeeds if the entered code is correct and not expired.
-        allow create: if request.resource.data.enteredCode == get(/databases/$(database)/documents/otps/$(email)).data.code
-                      && request.time < timestamp(get(/databases/$(database)/documents/otps/$(email)).data.expires_at);
-        allow read, update: if false;
-        allow delete: if request.auth != null;
-      }
+    // ── OTP verification documents (Secure OTP verification by Document ID) ──
+    match /otps/{otpDocId} {
+      // Anyone can create and get (read single doc) to verify, but NO ONE can list/query the collection.
+      allow create, get: if true;
+      allow list, update: if false;
+      // Anyone can delete the OTP doc (clean up can be done unauthenticated or after sign-in)
+      allow delete: if true;
     }
 
     // ── Stable user ID mapping (email → consistent SQLite user_id) ──────────

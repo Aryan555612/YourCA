@@ -727,7 +727,7 @@ class _PinDialogState extends State<_PinDialog>
       backgroundColor: AppColors.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       child: Padding(
-        padding: const EdgeInsets.all(28),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -811,14 +811,15 @@ class _PinDialogState extends State<_PinDialog>
   }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(4, (index) {
-        return Container(
-          margin: const EdgeInsets.symmetric(horizontal: 8),
-          width: 56,
-          height: 60,
+      children: List.generate(7, (index) {
+        if (index.isOdd) return const SizedBox(width: 8);
+        final pinIndex = index ~/ 2;
+        return SizedBox(
+          width: 48,
+          height: 56,
           child: TextFormField(
-            controller: controllers[index],
-            focusNode: focusNodes[index],
+            controller: controllers[pinIndex],
+            focusNode: focusNodes[pinIndex],
             keyboardType: TextInputType.number,
             textAlign: TextAlign.center,
             obscureText: true,
@@ -830,9 +831,9 @@ class _PinDialogState extends State<_PinDialog>
               LengthLimitingTextInputFormatter(1),
               FilteringTextInputFormatter.digitsOnly,
             ],
-            onChanged: (v) => _onPinChanged(index, v, isConfirm: isConfirm),
+            onChanged: (v) => _onPinChanged(pinIndex, v, isConfirm: isConfirm),
             decoration: InputDecoration(
-              contentPadding: const EdgeInsets.symmetric(vertical: 14),
+              contentPadding: const EdgeInsets.symmetric(vertical: 12),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
                 borderSide: BorderSide(color: AppColors.border, width: 1.5),
