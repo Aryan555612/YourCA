@@ -127,30 +127,30 @@ class BankSmsParser {
   //    or "Avl Bal: INR 1,234.56" or "Available balance: Rs. 5,000" ─────────
   static final _balancePatterns = [
     RegExp(
-      r'(?:Clear\s+)?[Bb]al(?:ance)?\s+(?:in\s+[Yy]our\s+[Aa]/[Cc]\s+is|[:\s]+)\s*(?:INR|Rs\.?|₹)\s*([\d,]+\.?\d*)',
+      r'(?:Clear\s+)?[Bb]al(?:ance)?.*?(?:INR|Rs\.?|₹)\s*([\d,]+\.?\d*)',
       caseSensitive: false,
     ),
     RegExp(
-      r'[Aa]vl\.?\s*[Bb]al(?:ance)?[:\s]+(?:INR|Rs\.?|₹)\s*([\d,]+\.?\d*)',
+      r'[Aa]vl\.?\s*[Bb]al(?:ance)?.*?(?:INR|Rs\.?|₹)\s*([\d,]+\.?\d*)',
       caseSensitive: false,
     ),
     RegExp(
-      r'[Aa]vailable\s+[Bb]al(?:ance)?[:\s]+(?:INR|Rs\.?|₹)\s*([\d,]+\.?\d*)',
+      r'[Aa]vailable\s+[Bb]al(?:ance)?.*?(?:INR|Rs\.?|₹)\s*([\d,]+\.?\d*)',
       caseSensitive: false,
     ),
     RegExp(
-      r'[Aa]/[Cc]\s+[Bb]al(?:ance)?[:\s]+(?:INR|Rs\.?|₹)\s*([\d,]+\.?\d*)',
+      r'[Aa]/[Cc]\s+[Bb]al(?:ance)?.*?(?:INR|Rs\.?|₹)\s*([\d,]+\.?\d*)',
       caseSensitive: false,
     ),
     RegExp(
-      r'(?:INR|Rs\.?|₹)\s*([\d,]+\.?\d*)\s+(?:is\s+your\s+)?(?:avl|available)?\s*[Bb]al',
+      r'(?:INR|Rs\.?|₹)\s*([\d,]+\.?\d*)\s+.*?[Bb]al',
       caseSensitive: false,
     ),
   ];
 
   // ── Account number pattern ──────────────────────────────────────────────
   static final _accountPattern = RegExp(
-    r'(?:a/c|acct|account)\s+(?:no\.?\s+)?(?:XX+|x+)(\d{4})',
+    r'(?:a/c|acct|account|ac)\s+(?:no\.?\s+)?(?:XX+|x+)(\d{4})',
     caseSensitive: false,
   );
 
@@ -378,7 +378,7 @@ class BankSmsParser {
 
     // Remove trailing noise words that crept in
     final trailingNoise = RegExp(
-      r'\s+(fro|from|clear|balance|limited|solutions)\s*$',
+      r'\s+(fro|from|clear|balance)\s*$',
       caseSensitive: false,
     );
     cleaned = cleaned.replaceAll(trailingNoise, '').trim();

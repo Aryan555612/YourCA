@@ -65,6 +65,23 @@ void main() {
       });
     });
 
+    // ── MUCB ─────────────────────────────────────────────────────────────────
+    group('MUCB', () {
+      test('parses MUCB debit SMS with person and slash suffix', () {
+        const sms =
+            'Your a/c no. XXXXXXXX9457 is debited for Rs.1.00 on 12-07-2026 and (UPI Ref no 619344901434). '
+            'Info. UPI/619344901434/To:SANGITABEN LALJIBHAI PATEL/Fro. Clear Balance in Your A/C is INR 3196.58. '
+            'In case of unauthorised transaction, click on https://www.mucbank.com/mucbcrms/ or Call on 18002336822 to report. - MUCB';
+
+        final result = parser.parse(body: sms, sender: 'JX-MUCBNK-S');
+
+        expect(result, isNotNull);
+        expect(result!.amount, 1.00);
+        expect(result.isDebit, true);
+        expect(result.merchant, 'Sangitaben Laljibhai Patel');
+      });
+    });
+
     // ── Non-bank SMS ─────────────────────────────────────────────────────────
     test('returns null for non-bank SMS', () {
       const sms = 'Your OTP for login is 123456. Valid for 10 minutes.';
