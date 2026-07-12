@@ -233,15 +233,24 @@ class AuthNotifier extends AsyncNotifier<void> {
             .collection('transactions')
             .get();
         if (txsSnap.docs.isNotEmpty) {
-          final transactions = txsSnap.docs
-              .map((doc) => Transaction.fromFirestore(doc.data(), doc.id))
-              .toList();
+          final List<Transaction> transactions = [];
+          for (final doc in txsSnap.docs) {
+            final tx = Transaction.fromFirestore(doc.data(), doc.id);
+            if (tx.date.isBefore(DateTime(2026, 7, 12))) {
+              // Delete old transaction from Firestore to clean up cloud storage
+              doc.reference.delete();
+            } else {
+              transactions.add(tx);
+            }
+          }
           
-          // Import into SQLite locally without syncing back to Firestore
-          await ref.read(transactionRepositoryProvider).addBatch(
-                transactions,
-                syncToCloud: false,
-              );
+          if (transactions.isNotEmpty) {
+            // Import into SQLite locally without syncing back to Firestore
+            await ref.read(transactionRepositoryProvider).addBatch(
+                  transactions,
+                  syncToCloud: false,
+                );
+          }
         }
       } catch (e) {
         debugPrint('Error restoring transactions from Firestore: $e');

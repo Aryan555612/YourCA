@@ -123,6 +123,7 @@ class SmsListenerService {
         limit: 1,
       );
 
+      final cutoffDate = DateTime(2026, 7, 12);
       if (lastTxRow.isNotEmpty) {
         final lastTxDateStr = lastTxRow.first['date'] as String;
         final lastTxDate = DateTime.parse(lastTxDateStr);
@@ -131,6 +132,9 @@ class SmsListenerService {
       } else {
         // Fresh install/login: only scan from 00:00:00 of the current date (today) onwards
         startDate = DateTime(now.year, now.month, now.day);
+      }
+      if (startDate.isBefore(cutoffDate)) {
+        startDate = cutoffDate;
       }
 
       final existingTxs = await repo.fetchDateRange(userId, startDate, now);

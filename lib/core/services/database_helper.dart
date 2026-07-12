@@ -20,6 +20,14 @@ class DatabaseHelper {
     if (_database != null) return _database!;
     _database = await _initDatabase();
     await _runMigrations(_database!);
+
+    // Hard cutoff: delete all transactions before July 12, 2026
+    await _database!.delete(
+      'transactions',
+      where: "date < ?",
+      whereArgs: [DateTime(2026, 7, 12).toIso8601String()],
+    );
+
     return _database!;
   }
 
