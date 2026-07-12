@@ -78,11 +78,14 @@ class NotificationService {
     required String merchant,
   }) async {
     final androidDetails = AndroidNotificationDetails(
-      'categorization_channel',
+      'categorization_channel_v3',
       'Transaction Categorization',
       channelDescription: 'Prompts to categorize transactions from SMS',
       importance: Importance.max,
       priority: Priority.high,
+      playSound: true,
+      enableVibration: true,
+      enableLights: true,
       actions: [
         const AndroidNotificationAction(
           'action_food',
@@ -121,15 +124,18 @@ class NotificationService {
     required String merchant,
     required bool isDebit,
   }) async {
-    const androidDetails = AndroidNotificationDetails(
-      'transaction_channel',
+    final androidDetails = AndroidNotificationDetails(
+      'transaction_channel_v3',
       'Transaction Alerts',
       channelDescription: 'Alerts for incoming and outgoing transactions',
       importance: Importance.max,
       priority: Priority.high,
+      playSound: true,
+      enableVibration: true,
+      enableLights: true,
     );
 
-    const notificationDetails = NotificationDetails(android: androidDetails);
+    final notificationDetails = NotificationDetails(android: androidDetails);
 
     final type = isDebit ? 'Debited to' : 'Credited from';
     final emoji = isDebit ? '🔴' : '🟢';
