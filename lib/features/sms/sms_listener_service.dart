@@ -129,8 +129,8 @@ class SmsListenerService {
         // Overlap by 2 days to account for potential timestamp mismatches/delays
         startDate = lastTxDate.subtract(const Duration(days: 2));
       } else {
-        // Default to last 30 days if no local transaction data exists
-        startDate = now.subtract(const Duration(days: 30));
+        // Fresh install/login: only scan from 00:00:00 of the current date (today) onwards
+        startDate = DateTime(now.year, now.month, now.day);
       }
 
       final existingTxs = await repo.fetchDateRange(userId, startDate, now);
@@ -141,8 +141,15 @@ class SmsListenerService {
           .cast<String>()
           .toSet();
 
+      final existingRawTexts = existingTxs
+          .map((tx) => tx.rawText)
+          .where((text) => text != null)
+          .cast<String>()
+          .toSet();
+
       final existingKeys = existingTxs.map((tx) {
-        final dateKey = "${tx.date.year}-${tx.date.month}-${tx.date.day}";
+        final localDate = tx.date.toLocal();
+        final dateKey = "${localDate.year}-${localDate.month}-${localDate.day}";
         return "${tx.amount}_${dateKey}_${tx.merchant.toLowerCase().trim()}";
       }).toSet();
 
@@ -166,17 +173,23 @@ class SmsListenerService {
         final result = BankSmsParser.instance.parse(body: body, sender: sender);
         if (result == null) continue;
 
-        // Check reference duplicate
+        // 1. Check raw text duplicate (ultimate unique SMS fingerprint check)
+        if (existingRawTexts.contains(body)) {
+          continue;
+        }
+
+        // 2. Check reference duplicate
         if (result.reference != null && existingRefs.contains(result.reference)) {
           continue;
         }
 
-        // Check unique key duplicate
+        // 3. Check unique key duplicate using timezone-robust local date format
         final txDate = result.date != null
             ? DateTime(result.date!.year, result.date!.month, result.date!.day,
                 timestamp.hour, timestamp.minute, timestamp.second)
             : timestamp;
-        final dateKey = "${txDate.year}-${txDate.month}-${txDate.day}";
+        final localTxDate = txDate.toLocal();
+        final dateKey = "${localTxDate.year}-${localTxDate.month}-${localTxDate.day}";
         final key = "${result.amount}_${dateKey}_${result.merchant.toLowerCase().trim()}";
         if (existingKeys.contains(key)) {
           continue;
@@ -208,6 +221,7 @@ class SmsListenerService {
         if (result.reference != null) {
           existingRefs.add(result.reference!);
         }
+        existingRawTexts.add(body);
         existingKeys.add(key);
         newTransactionsFound = true;
       }

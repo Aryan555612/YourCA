@@ -71,7 +71,7 @@ class MerchantBreakdownScreen extends ConsumerWidget {
                       style: AppTextStyles.titleMedium,
                     ),
                     subtitle: Text(
-                      '${DateUtils2.toDayMonth(tx.date)} at ${DateUtils2.toTime(tx.date)}',
+                      '${DateUtils2.toDayMonth(tx.date)} at ${DateUtils2.toTime(tx.date)}${tx.bankReference != null ? ' • Ref: ${tx.bankReference}' : ''}',
                       style: AppTextStyles.labelSmall,
                     ),
                     trailing: Text(

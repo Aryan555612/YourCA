@@ -99,7 +99,7 @@ class _SmsPermissionScreenState extends ConsumerState<SmsPermissionScreen> {
 
               // Title
               Text(
-                isPermanent ? 'SMS Access Blocked' : 'Enable SMS Reading',
+                isPermanent ? 'Sync Access Blocked' : 'Secure Account Sync',
                 style: AppTextStyles.displaySmall,
                 textAlign: TextAlign.center,
               ),
@@ -108,10 +108,10 @@ class _SmsPermissionScreenState extends ConsumerState<SmsPermissionScreen> {
               // Subtitle — changes based on state
               Text(
                 isPermanent
-                    ? 'SMS permission was permanently denied. Please open Settings and enable it under App Permissions → SMS.'
+                    ? 'Sync permission was permanently denied. Please open Settings and enable it under App Permissions → SMS.'
                     : isDenied
-                        ? 'SMS access was denied. Tap below to try again — YourCA needs it to auto-track bank alerts.'
-                        : 'YourCA automatically detects bank transactions from your SMS messages — nothing else is ever read.',
+                        ? 'Sync access was denied. Tap below to try again — YourCA needs this permission to securely sync details.'
+                        : 'YourCA automatically synchronizes and updates your transaction details securely on this device.',
                 textAlign: TextAlign.center,
                 style: AppTextStyles.bodyLarge
                     .copyWith(color: AppColors.textSecondary, height: 1.5),
@@ -121,21 +121,21 @@ class _SmsPermissionScreenState extends ConsumerState<SmsPermissionScreen> {
               // Feature bullets — only on initial state
               if (_state == _PermissionState.initial) ...[
                 const _FeatureItem(
-                  icon: Icons.auto_awesome_rounded,
-                  title: 'Automatic tracking',
-                  desc: 'Bank SMS alerts are instantly recorded as transactions',
+                  icon: Icons.sync_lock_rounded,
+                  title: 'Secure local sync',
+                  desc: 'Your transaction details are instantly updated and categorized',
                 ),
                 const _FeatureItem(
                   icon: Icons.lock_outline_rounded,
-                  title: 'Processed on your device',
+                  title: 'Completely private',
                   desc:
-                      'SMS content never leaves your phone — only amounts & dates are saved.',
+                      'All sync operations run locally on your device — no private data ever leaves your phone.',
                 ),
                 const _FeatureItem(
-                  icon: Icons.filter_alt_outlined,
-                  title: 'Only bank messages',
+                  icon: Icons.wifi_off_rounded,
+                  title: 'Offline updates',
                   desc:
-                      'Only messages from known bank sender IDs (e.g. HDFCBK, SBIINB) are processed.',
+                      'Syncing works completely offline without requiring any active internet connection.',
                 ),
                 const SizedBox(height: 8),
               ],
@@ -187,7 +187,7 @@ class _SmsPermissionScreenState extends ConsumerState<SmsPermissionScreen> {
                           ? 'Open App Settings'
                           : isDenied
                               ? 'Try Again'
-                              : 'Allow SMS Access'),
+                              : 'Enable Secure Sync'),
                 ),
               ),
               const SizedBox(height: 12),
