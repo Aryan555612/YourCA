@@ -123,24 +123,26 @@ final trendDataProvider = FutureProvider.autoDispose<List<TrendDataPoint>>((ref)
       final end = DateTime(now.year, now.month, now.day, 23, 59, 59);
       final txs = await repo.fetchDateRange(userId, start, end);
 
+      txs.sort((a, b) => a.date.compareTo(b.date));
+
       final points = <TrendDataPoint>[];
-      final labels = ['Night', 'Morning', 'Afternoon', 'Evening'];
-      for (int i = 0; i < 4; i++) {
-        final blockStart = start.add(Duration(hours: i * 6));
-        final blockEnd = blockStart.add(const Duration(hours: 5, minutes: 59, seconds: 59));
-        double income = 0;
-        double expense = 0;
-        for (final tx in txs) {
-          if (tx.date.isAfter(blockStart.subtract(const Duration(seconds: 1))) &&
-              tx.date.isBefore(blockEnd.add(const Duration(seconds: 1)))) {
-            if (tx.type == TransactionType.credit) {
-              income += tx.amount;
-            } else {
-              expense += tx.amount;
-            }
-          }
-        }
-        points.add(TrendDataPoint(label: labels[i], income: income, expense: expense));
+      for (final tx in txs) {
+        final hour = tx.date.hour;
+        final minute = tx.date.minute;
+        final period = hour >= 12 ? 'PM' : 'AM';
+        final displayHour = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour);
+        final displayMinute = minute.toString().padLeft(2, '0');
+        final label = '$displayHour:$displayMinute $period';
+        
+        points.add(TrendDataPoint(
+          label: label,
+          income: tx.type == TransactionType.credit ? tx.amount : 0,
+          expense: tx.type == TransactionType.debit ? tx.amount : 0,
+        ));
+      }
+
+      if (points.isEmpty) {
+        points.add(const TrendDataPoint(label: 'No transactions', income: 0, expense: 0));
       }
       return points;
 
@@ -176,6 +178,7 @@ final trendDataProvider = FutureProvider.autoDispose<List<TrendDataPoint>>((ref)
       final txs = await repo.fetchDateRange(userId, start, end);
 
       final points = <TrendDataPoint>[];
+      final monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       for (int w = 0; w < 4; w++) {
         final wStart = start.add(Duration(days: w * 7));
         if (wStart.isAfter(end)) break;
@@ -195,7 +198,8 @@ final trendDataProvider = FutureProvider.autoDispose<List<TrendDataPoint>>((ref)
             }
           }
         }
-        points.add(TrendDataPoint(label: 'W${w + 1}', income: income, expense: expense));
+        final label = '${wStart.day} ${monthNames[wStart.month - 1].substring(0, 3)}';
+        points.add(TrendDataPoint(label: label, income: income, expense: expense));
       }
       return points;
 
@@ -205,8 +209,8 @@ final trendDataProvider = FutureProvider.autoDispose<List<TrendDataPoint>>((ref)
       final count = range == TrendRange.threeMonths ? 3 : (range == TrendRange.sixMonths ? 6 : 12);
       final points = <TrendDataPoint>[];
       
-      for (int i = count - 1; i >= 0; i--) {
-        final monthDate = DateTime(now.year, now.month - i, 1);
+      for (int i = 0; i < count; i++) {
+        final monthDate = DateTime(now.year, now.month + i, 1);
         final start = DateTime(monthDate.year, monthDate.month, 1);
         final end = DateTime(monthDate.year, monthDate.month + 1, 0, 23, 59, 59);
         final txs = await repo.fetchDateRange(userId, start, end);
@@ -819,9 +823,14 @@ class _CategoryChartState extends State<_CategoryChart> {
                   pieTouchData: PieTouchData(
                     touchCallback: (event, response) {
                       setState(() {
+                        if (!event.isInterestedForInteractions ||
+                            response == null ||
+                            response.touchedSection == null) {
+                          _touchedIndex = -1;
+                          return;
+                        }
                         _touchedIndex =
-                            response?.touchedSection?.touchedSectionIndex ??
-                                -1;
+                            response.touchedSection!.touchedSectionIndex;
                       });
                     },
                   ),
@@ -971,12 +980,30 @@ class _BarChart extends ConsumerWidget {
             const SizedBox(height: 20),
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 350),
-              child: SizedBox(
-                key: ValueKey(selectedChartType),
-                height: 180,
-                child: selectedChartType == ChartType.bar
-                    ? _buildBarChart(isDark, safeMaxY)
-                    : _buildLineChart(isDark, safeMaxY, isArea: selectedChartType == ChartType.area),
+              child: Builder(
+                key: ValueKey('${selectedChartType}_${selectedRange == TrendRange.oneDay && points.length > 4}'),
+                builder: (ctx) {
+                  final chartWidth = selectedRange == TrendRange.oneDay && points.length > 4
+                      ? points.length * 80.0
+                      : null;
+                  
+                  final chartWidget = selectedChartType == ChartType.bar
+                      ? _buildBarChart(isDark, safeMaxY)
+                      : _buildLineChart(isDark, safeMaxY, isArea: selectedChartType == ChartType.area);
+
+                  return SizedBox(
+                    height: 180,
+                    child: chartWidth != null
+                        ? SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: SizedBox(
+                              width: chartWidth,
+                              child: chartWidget,
+                            ),
+                          )
+                        : chartWidget,
+                  );
+                },
               ),
             ),
           ],
