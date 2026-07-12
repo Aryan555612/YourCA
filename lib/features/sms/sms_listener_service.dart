@@ -30,7 +30,7 @@ class SmsListenerService {
 
   SmsListenerService(this._ref);
 
-  String autoSelectCategory(String merchant) {
+  String autoSelectCategory(String merchant, TransactionType type) {
     final lower = merchant.toLowerCase().trim();
     final companyKeywords = [
       'flipkart', 'amazon', 'myntra', 'ajio', 'meesho', 'nykaa',
@@ -50,6 +50,13 @@ class SmsListenerService {
       if (lower.contains(kw)) {
         return 'Shopping';
       }
+    }
+    if (type == TransactionType.credit) {
+      final words = merchant.trim().split(RegExp(r'\s+'));
+      if (words.length >= 2) {
+        return 'Person';
+      }
+      return 'Income';
     }
     return 'Person';
   }
@@ -97,6 +104,11 @@ class SmsListenerService {
       isCredit: !result.isDebit,
     );
 
+    final txDate = result.date != null
+        ? DateTime(result.date!.year, result.date!.month, result.date!.day,
+            timestamp.hour, timestamp.minute, timestamp.second)
+        : timestamp;
+
     final tx = Transaction(
       id: const Uuid().v4(),
       userId: userId,
@@ -104,32 +116,28 @@ class SmsListenerService {
       type: result.isDebit ? TransactionType.debit : TransactionType.credit,
       category: category,
       merchant: result.merchant,
-      date: result.date ?? timestamp,
+      date: txDate,
       source: TransactionSource.sms,
       rawText: body,
       createdAt: DateTime.now(),
       bankReference: result.reference,
     );
 
-    if (category == 'Other' && tx.type == TransactionType.debit) {
-      final autoCat = autoSelectCategory(tx.merchant);
-      final txWithAuto = tx.copyWith(category: autoCat);
+    final autoCat = autoSelectCategory(tx.merchant, tx.type);
+    final txWithAuto = tx.copyWith(category: autoCat);
 
-      await _ref.read(transactionRepositoryProvider).add(txWithAuto);
-      _ref.read(pendingConfirmTxIdsProvider.notifier).update((state) => {...state, tx.id});
+    await _ref.read(transactionRepositoryProvider).add(txWithAuto);
+    _ref.read(pendingConfirmTxIdsProvider.notifier).update((state) => {...state, tx.id});
 
-      final isForeground = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
-      if (isForeground) {
-        _ref.read(pendingCategorizationProvider.notifier).state = txWithAuto;
-      } else {
-        await NotificationService.instance.showCategorizationNotification(
-          txId: tx.id,
-          amount: tx.amount,
-          merchant: tx.merchant,
-        );
-      }
+    final isForeground = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    if (isForeground) {
+      _ref.read(pendingCategorizationProvider.notifier).state = txWithAuto;
     } else {
-      await _ref.read(transactionRepositoryProvider).add(tx);
+      await NotificationService.instance.showCategorizationNotification(
+        txId: tx.id,
+        amount: tx.amount,
+        merchant: tx.merchant,
+      );
     }
   }
 }

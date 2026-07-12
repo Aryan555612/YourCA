@@ -206,7 +206,10 @@ class _InAppCategorizationDialogState extends ConsumerState<_InAppCategorization
                   spacing: 8,
                   runSpacing: 8,
                   children: categories.map((cat) {
-                    if (cat.name == 'Other' || cat.name == 'Income') return const SizedBox.shrink();
+                    if (cat.name == 'Other') return const SizedBox.shrink();
+                    if (cat.name == 'Income' && widget.tx.type == TransactionType.debit) {
+                      return const SizedBox.shrink();
+                    }
 
                     final isSelected = cat.name == _selectedCategory;
                     return ChoiceChip(

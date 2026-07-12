@@ -69,9 +69,9 @@ final monthlySummaryProvider =
       income += tx.amount;
     } else {
       expense += tx.amount;
-      catBreakdown[tx.category] =
-          (catBreakdown[tx.category] ?? 0) + tx.amount;
     }
+    catBreakdown[tx.category] =
+        (catBreakdown[tx.category] ?? 0) + tx.amount;
   }
 
   return MonthlySummary(
@@ -150,7 +150,7 @@ final trendDataProvider = FutureProvider.autoDispose<List<TrendDataPoint>>((ref)
       final txs = await repo.fetchDateRange(userId, start, end);
 
       final points = <TrendDataPoint>[];
-      for (int i = 0; i < 7; i++) {
+      for (int i = 6; i >= 0; i--) {
         final date = DateTime(now.year, now.month, now.day).subtract(Duration(days: i));
         double income = 0;
         double expense = 0;
@@ -205,7 +205,7 @@ final trendDataProvider = FutureProvider.autoDispose<List<TrendDataPoint>>((ref)
       final count = range == TrendRange.threeMonths ? 3 : (range == TrendRange.sixMonths ? 6 : 12);
       final points = <TrendDataPoint>[];
       
-      for (int i = 0; i < count; i++) {
+      for (int i = count - 1; i >= 0; i--) {
         final monthDate = DateTime(now.year, now.month - i, 1);
         final start = DateTime(monthDate.year, monthDate.month, 1);
         final end = DateTime(monthDate.year, monthDate.month + 1, 0, 23, 59, 59);
@@ -807,7 +807,7 @@ class _CategoryChartState extends State<_CategoryChart> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Send Breakdown', style: AppTextStyles.headlineSmall),
+            Text('Category Breakdown', style: AppTextStyles.headlineSmall),
             const SizedBox(height: 20),
             SizedBox(
               height: 200,
@@ -1013,6 +1013,7 @@ class _BarChart extends ConsumerWidget {
         topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         bottomTitles: AxisTitles(sideTitles: SideTitles(
           showTitles: true,
+          interval: 1,
           getTitlesWidget: (x, meta) {
             final idx = x.toInt();
             if (idx < 0 || idx >= points.length) return const SizedBox.shrink();
@@ -1057,7 +1058,7 @@ class _BarChart extends ConsumerWidget {
         leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, getTitlesWidget: (x, meta) {
+        bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, interval: 1, getTitlesWidget: (x, meta) {
           final idx = x.toInt();
           if (idx < 0 || idx >= points.length) return const SizedBox.shrink();
           return Padding(padding: const EdgeInsets.only(top: 6), child: Text(points[idx].label.split(' ').first, style: AppTextStyles.labelSmall));
@@ -1177,7 +1178,10 @@ class _QuickCategorizationCard extends ConsumerWidget {
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 children: categories.map((cat) {
-                  if (cat.name == 'Other' || cat.name == 'Income') return const SizedBox.shrink();
+                  if (cat.name == 'Other') return const SizedBox.shrink();
+                  if (cat.name == 'Income' && tx.type == TransactionType.debit) {
+                    return const SizedBox.shrink();
+                  }
 
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
