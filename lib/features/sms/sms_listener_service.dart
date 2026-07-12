@@ -395,7 +395,7 @@ Future<void> backgroundSmsHandler(SmsMessage message) async {
     } catch (_) {}
 
     // Trigger local notification
-    await NotificationService.instance.initialize();
+    await NotificationService.instance.initialize(requestPermission: false);
     if (tx.type == TransactionType.debit) {
       await NotificationService.instance.showCategorizationNotification(
         txId: tx.id,
