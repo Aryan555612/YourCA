@@ -220,8 +220,8 @@ class _TxDetailBodyState extends ConsumerState<_TxDetailBody> {
         if (tx.rawText != null) ...[
           const SizedBox(height: 8),
           _DetailTile(
-              icon: Icons.sms_outlined,
-              label: 'Original SMS',
+              icon: Icons.receipt_long_outlined,
+              label: 'Transaction Narration',
               value: tx.rawText!),
         ],
 
@@ -292,7 +292,7 @@ class _TxDetailBodyState extends ConsumerState<_TxDetailBody> {
   String _sourceLabel(TransactionSource source) {
     switch (source) {
       case TransactionSource.sms:
-        return '📱 SMS Auto-detected';
+        return '📱 Automatic Sync';
       case TransactionSource.manual:
         return '✏️ Manually entered';
       case TransactionSource.statementImport:

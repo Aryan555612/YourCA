@@ -254,6 +254,19 @@ class _TransactionCard extends ConsumerWidget {
 
   const _TransactionCard({required this.tx});
 
+  String _getSourceLabel(TransactionSource source) {
+    switch (source) {
+      case TransactionSource.sms:
+        return 'Auto';
+      case TransactionSource.manual:
+        return 'Manual';
+      case TransactionSource.statementImport:
+        return 'Statement';
+      case TransactionSource.aa:
+        return 'Bank';
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isDebit = tx.type == TransactionType.debit;
@@ -291,7 +304,7 @@ class _TransactionCard extends ConsumerWidget {
                         maxLines: 1, overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 2),
                     Text(
-                      '${catInfo.emoji} ${tx.category}  Â·  ${tx.source.name}',
+                      '${catInfo.emoji} ${tx.category}  •  ${_getSourceLabel(tx.source)}',
                       style: AppTextStyles.bodySmall,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,

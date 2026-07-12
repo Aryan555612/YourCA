@@ -1,4 +1,4 @@
-﻿import 'dart:io';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
@@ -522,7 +522,7 @@ class _PreviewRow extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
         ),
         subtitle: Text(
-          '${DateUtils2.toDisplayDate(row.date)}  Â·  ${row.category}',
+          '${DateUtils2.toDisplayDate(row.date)}  •  ${row.category}',
           style: AppTextStyles.bodySmall,
         ),
         secondary: Text(

@@ -326,6 +326,19 @@ class SavingsScreen extends ConsumerWidget {
                       description: 'Needs (50%), Wants (30%), Savings (20%).',
                       progressText: 'Savings Target: \u20B9${(summary.totalIncome * 0.2).toStringAsFixed(0)}',
                       details: 'Needs Limit: \u20B9${(summary.totalIncome * 0.5).toStringAsFixed(0)}\nWants Limit: \u20B9${(summary.totalIncome * 0.3).toStringAsFixed(0)}',
+                      onTap: () {
+                        _showTemplateDetailsDialog(
+                          context: context,
+                          ref: ref,
+                          title: '50-30-20 Rule Plan',
+                          icon: Icons.pie_chart_rounded,
+                          color: AppColors.primary,
+                          description: 'Needs (50%), Wants (30%), Savings (20%).',
+                          targetAmount: summary.totalIncome * 0.2,
+                          savedAmount: 0.0,
+                          explanation: 'The 50-30-20 rule is a popular budgeting framework. It suggests dividing your monthly after-tax income into three spending categories: 50% for essential needs, 30% for personal wants, and 20% for your savings and debt repayment goals.\n\nThis template will set up a tracking target for your 20% savings portion.',
+                        );
+                      },
                     ),
                     const SizedBox(width: 12),
                     _TemplatePlanCard(
@@ -335,6 +348,19 @@ class SavingsScreen extends ConsumerWidget {
                       description: 'Save 3 months of essential income to protect you.',
                       progressText: 'Target Goal: \u20B9${(summary.totalIncome * 3).toStringAsFixed(0)}',
                       details: 'Saved Progress: \u20B9${savedAmount.clamp(0, double.infinity).toStringAsFixed(0)}',
+                      onTap: () {
+                        _showTemplateDetailsDialog(
+                          context: context,
+                          ref: ref,
+                          title: 'Emergency Fund Builder',
+                          icon: Icons.shield_rounded,
+                          color: AppColors.credit,
+                          description: 'Save 3 months of essential income to protect you.',
+                          targetAmount: summary.totalIncome * 3,
+                          savedAmount: savedAmount,
+                          explanation: 'An emergency fund is money set aside to cover unexpected life expenses (medical emergencies, job loss, car repairs). Financial experts recommend building a buffer equal to at least 3 months of your monthly living expenses to ensure secure peace of mind.',
+                        );
+                      },
                     ),
                     const SizedBox(width: 12),
                     _TemplatePlanCard(
@@ -344,6 +370,19 @@ class SavingsScreen extends ConsumerWidget {
                       description: 'Put \u20B920,000 aside for specific short-term envelope goals.',
                       progressText: 'Envelope Target: \u20B920,000',
                       details: 'Saved Progress: \u20B9${savedAmount.clamp(0, 20000.0).toStringAsFixed(0)}',
+                      onTap: () {
+                        _showTemplateDetailsDialog(
+                          context: context,
+                          ref: ref,
+                          title: 'Envelope Budget Plan',
+                          icon: Icons.mail_outline_rounded,
+                          color: AppColors.warning,
+                          description: 'Put \u20B920,000 aside for specific short-term envelope goals.',
+                          targetAmount: 20000.0,
+                          savedAmount: savedAmount.clamp(0, 20000.0),
+                          explanation: 'The envelope budgeting method is a cash-based system where you allocate specific dollar amounts to virtual "envelopes" for different categories. This plan creates a fixed target envelope goal of ₹20,000 for your short-term vacation, gadgets, or emergency purchases.',
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -644,6 +683,142 @@ class _V2Notice extends StatelessWidget {
   }
 }
 
+void _showTemplateDetailsDialog({
+  required BuildContext context,
+  required WidgetRef ref,
+  required String title,
+  required IconData icon,
+  required Color color,
+  required String description,
+  required double targetAmount,
+  required double savedAmount,
+  required String explanation,
+}) {
+  showDialog(
+    context: context,
+    builder: (ctx) => Dialog(
+      backgroundColor: AppColors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: color, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: AppTextStyles.headlineSmall,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'About this Framework',
+              style: AppTextStyles.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              explanation,
+              style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceVariant,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Target Goal', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
+                      Text('\u20B9${targetAmount.toStringAsFixed(0)}', style: AppTextStyles.titleMedium.copyWith(fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  const Divider(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Duration', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
+                      const Text('Monthly tracker', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: Text('Close', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      final userId = ref.read(currentUserIdProvider);
+                      if (userId != null) {
+                        final plan = SavingsPlan(
+                          id: const Uuid().v4(),
+                          userId: userId,
+                          title: title,
+                          description: description,
+                          targetAmount: targetAmount,
+                          savedAmount: savedAmount,
+                          targetDate: DateTime.now().add(const Duration(days: 30)),
+                          isCustom: true,
+                          createdAt: DateTime.now(),
+                        );
+                        await ref.read(savingsPlanRepositoryProvider).createPlan(plan);
+                        if (ctx.mounted) {
+                          Navigator.of(ctx).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Activated "$title"! Tracker added to your Custom Goals.'),
+                              duration: const Duration(seconds: 3),
+                            ),
+                          );
+                        }
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      elevation: 0,
+                    ),
+                    child: Text('Activate Plan', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 // ── Template Plan Card Widget ──
 class _TemplatePlanCard extends StatelessWidget {
   final String title;
@@ -652,6 +827,7 @@ class _TemplatePlanCard extends StatelessWidget {
   final String description;
   final String progressText;
   final String details;
+  final VoidCallback onTap;
 
   const _TemplatePlanCard({
     required this.title,
@@ -660,53 +836,58 @@ class _TemplatePlanCard extends StatelessWidget {
     required this.description,
     required this.progressText,
     required this.details,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 250,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceVariant,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: color, size: 22),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  style: AppTextStyles.titleMedium.copyWith(fontWeight: FontWeight.bold),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        width: 250,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceVariant,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: color, size: 22),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: AppTextStyles.titleMedium.copyWith(fontWeight: FontWeight.bold),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            description,
-            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const Spacer(),
-          Text(
-            progressText,
-            style: AppTextStyles.labelSmall.copyWith(color: color, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            details,
-            style: AppTextStyles.labelSmall.copyWith(fontSize: 10, color: AppColors.textTertiary),
-          ),
-        ],
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              description,
+              style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const Spacer(),
+            Text(
+              progressText,
+              style: AppTextStyles.labelSmall.copyWith(color: color, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              details,
+              style: AppTextStyles.labelSmall.copyWith(fontSize: 10, color: AppColors.textTertiary),
+            ),
+          ],
+        ),
       ),
     );
   }

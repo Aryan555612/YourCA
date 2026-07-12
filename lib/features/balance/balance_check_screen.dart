@@ -225,7 +225,7 @@ class _BalanceCheckScreenState extends ConsumerState<BalanceCheckScreen>
           ),
           const SizedBox(height: 4),
           Text(
-            'Securely read from your bank SMS',
+            'Securely sync your bank balance',
             style: AppTextStyles.bodySmall.copyWith(color: AppColors.textTertiary),
           ),
           const SizedBox(height: 28),
@@ -264,7 +264,7 @@ class _BalanceCheckScreenState extends ConsumerState<BalanceCheckScreen>
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Balance is read only from SMS messages on your device. No data is sent to any server. Protected by your 4-digit PIN.',
+                        'Balance is synced only from secure local bank notifications on your device. No data is sent to any server. Protected by your 4-digit PIN.',
                         style: AppTextStyles.bodySmall.copyWith(
                           color: AppColors.textSecondary,
                         ),
@@ -544,7 +544,7 @@ class _BalanceCheckScreenState extends ConsumerState<BalanceCheckScreen>
                             Icon(Icons.verified_rounded, color: AppColors.credit, size: 14),
                             const SizedBox(width: 5),
                             Text(
-                              'Verified via SMS',
+                              'Securely Synced',
                               style: TextStyle(
                                 color: AppColors.credit,
                                 fontSize: 11,
