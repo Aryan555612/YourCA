@@ -69,9 +69,9 @@ final monthlySummaryProvider =
       income += tx.amount;
     } else {
       expense += tx.amount;
+      catBreakdown[tx.category] =
+          (catBreakdown[tx.category] ?? 0) + tx.amount;
     }
-    catBreakdown[tx.category] =
-        (catBreakdown[tx.category] ?? 0) + tx.amount;
   }
 
   return MonthlySummary(

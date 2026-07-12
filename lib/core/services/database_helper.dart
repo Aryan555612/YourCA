@@ -19,7 +19,42 @@ class DatabaseHelper {
   Future<Database> get database async {
     if (_database != null) return _database!;
     _database = await _initDatabase();
+    await _runMigrations(_database!);
     return _database!;
+  }
+
+  Future<void> _runMigrations(Database db) async {
+    try {
+      final rows = await db.query('transactions');
+      for (final row in rows) {
+        final id = row['id'] as String;
+        final dateStr = row['date'] as String?;
+        final createdAtStr = row['created_at'] as String?;
+        if (dateStr == null || createdAtStr == null) continue;
+
+        final date = DateTime.tryParse(dateStr);
+        final createdAt = DateTime.tryParse(createdAtStr);
+
+        if (date != null && createdAt != null) {
+          if (date.hour == 0 && date.minute == 0 && date.second == 0) {
+            final updatedDate = DateTime(
+              date.year,
+              date.month,
+              date.day,
+              createdAt.hour,
+              createdAt.minute,
+              createdAt.second,
+            );
+            await db.update(
+              'transactions',
+              {'date': updatedDate.toIso8601String()},
+              where: 'id = ?',
+              whereArgs: [id],
+            );
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   Future<Database> _initDatabase() async {

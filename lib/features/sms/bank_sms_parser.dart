@@ -90,9 +90,9 @@ class BankSmsParser {
   // ── HIGH PRIORITY: UPI To:NAME/From: pattern (most Indian banks) ─────────
   // FIXED: Now handles full merchant names including "LENSKART SOLUTIONS LIMITED"
   // Pattern captures everything between "To:" and the "/" separator or line end
-  // Also handles "/Fro." abbreviation used by some banks (MUCB, etc.)
+  // Also handles "/Fro." abbreviation used by some banks (MUCB, etc.) and arbitrary slash suffixes like "/F."
   static final _upiToPattern = RegExp(
-    r'(?:UPI[/\s]*[\w]+[/\s]*)?To[:\s]+([A-Za-z0-9][A-Za-z0-9\s\.\-\_&]{2,80}?)(?:\s*/\s*(?:From|Fro[m\.]?)|(?:\.?\s*Clear\b)|\.\s*$|\s*$)',
+    r'(?:UPI[/\s]*[\w]+[/\s]*)?To[:\s]+([A-Za-z0-9][A-Za-z0-9\s\.\-\_&]{2,80}?)(?:\s*/|(?:\.?\s*Clear\b)|\.\s*$|\s*$)',
     caseSensitive: false,
   );
 
