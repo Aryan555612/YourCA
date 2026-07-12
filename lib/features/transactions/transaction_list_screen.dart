@@ -499,21 +499,30 @@ class _ExportDialogState extends ConsumerState<_ExportDialog> {
         return;
       }
 
-      // Generate CSV
-      final headers = ['Date', 'Merchant', 'Amount', 'Type', 'Category', 'Reference', 'Note'];
-      final List<List<dynamic>> rows = [headers];
+      // Generate Text Report
+      final buffer = StringBuffer();
+      buffer.writeln('==================================================');
+      buffer.writeln('              YourCA TRANSACTION REPORT           ');
+      buffer.writeln('==================================================');
+      buffer.writeln('Date Range: ${DateFormat('dd-MMM-yyyy').format(start)} to ${DateFormat('dd-MMM-yyyy').format(end)}');
+      buffer.writeln('Generated At: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now())}');
+      buffer.writeln('Total Transactions: ${txs.length}');
+      buffer.writeln('--------------------------------------------------\n');
+
+      int index = 1;
       for (final tx in txs) {
-        rows.add([
-          DateFormat('yyyy-MM-dd HH:mm:ss').format(tx.date),
-          tx.merchant,
-          tx.amount,
-          tx.type.name,
-          tx.category,
-          tx.bankReference ?? '',
-          tx.note ?? '',
-        ]);
+        final prefix = tx.type == TransactionType.credit ? '+' : '-';
+        buffer.writeln('$index. MERCHANT: ${tx.merchant}');
+        buffer.writeln('   Date: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(tx.date)}');
+        buffer.writeln('   Amount: $prefix\u20B9${tx.amount.toStringAsFixed(2)}');
+        buffer.writeln('   Category: ${tx.category}');
+        buffer.writeln('   Reference: ${tx.bankReference ?? "-"}');
+        buffer.writeln('   Note: ${tx.note ?? "-"}');
+        buffer.writeln('\n--------------------------------------------------\n');
+        index++;
       }
-      final csvData = const ListToCsvConverter().convert(rows);
+
+      final textData = buffer.toString();
 
       // Save file to Downloads folder
       Directory? directory;
@@ -525,15 +534,15 @@ class _ExportDialogState extends ConsumerState<_ExportDialog> {
       final dateStr = _isByMonth
           ? DateFormat('yyyy_MM').format(_selectedMonth)
           : '${DateFormat('yyyy-MM-dd').format(start)}_to_${DateFormat('yyyy-MM-dd').format(end)}';
-      final filename = 'YourCA_export_$dateStr.csv';
+      final filename = 'YourCA_export_$dateStr.txt';
       final file = File('${directory.path}/$filename');
-      await file.writeAsString(csvData);
+      await file.writeAsString(textData);
 
       if (mounted) {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✔ Saved CSV to phone storage: $filename'),
+            content: Text('✔ Saved Text report to phone storage: $filename'),
             backgroundColor: AppColors.primary,
           ),
         );
@@ -722,7 +731,7 @@ class _ExportDialogState extends ConsumerState<_ExportDialog> {
                           child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                         )
                       : Text(
-                          'Download CSV',
+                          'Download TXT',
                           style: AppTextStyles.labelLarge.copyWith(color: Colors.white),
                         ),
                 ),

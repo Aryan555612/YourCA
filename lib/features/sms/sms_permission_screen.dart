@@ -33,6 +33,7 @@ class _SmsPermissionScreenState extends ConsumerState<SmsPermissionScreen> {
     final statuses = await [
       Permission.sms,
       Permission.phone,
+      Permission.notification,
     ].request();
 
     final smsStatus = statuses[Permission.sms] ?? PermissionStatus.denied;
