@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sqflite/sqflite.dart' hide Transaction;
 import '../../core/services/database_helper.dart';

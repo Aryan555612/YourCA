@@ -1,6 +1,6 @@
 import 'dart:math';
 import 'dart:convert';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart' show debugPrint;
