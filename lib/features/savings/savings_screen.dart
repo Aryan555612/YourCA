@@ -788,7 +788,7 @@ void _showTemplateDetailsDialog({
                           isCustom: true,
                           createdAt: DateTime.now(),
                         );
-                        await ref.read(savingsPlanRepositoryProvider).createPlan(plan);
+                        await ref.read(savingsPlanRepositoryProvider).addPlan(userId, plan);
                         if (ctx.mounted) {
                           Navigator.of(ctx).pop();
                           ScaffoldMessenger.of(context).showSnackBar(
