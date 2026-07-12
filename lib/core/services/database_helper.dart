@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
@@ -99,8 +100,23 @@ class DatabaseHelper {
   }
 
   Future<Database> _initDatabase() async {
-    final documentsDirectory = await getApplicationDocumentsDirectory();
-    final path = join(documentsDirectory.path, 'yourca_local.db');
+    final databasesPath = await getDatabasesPath();
+    final path = join(databasesPath, 'yourca_local.db');
+
+    // Safe migration from legacy app documents path to native databases path
+    try {
+      final documentsDirectory = await getApplicationDocumentsDirectory();
+      final oldPath = join(documentsDirectory.path, 'yourca_local.db');
+      final oldFile = File(oldPath);
+      final newFile = File(path);
+      if (await oldFile.exists() && !(await newFile.exists())) {
+        await Directory(databasesPath).create(recursive: true);
+        await oldFile.copy(path);
+        await oldFile.delete();
+      }
+    } catch (_) {
+      // Catch layout/plugin missing exceptions in background isolates
+    }
 
     return await openDatabase(
       path,
