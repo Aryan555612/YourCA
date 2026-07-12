@@ -367,7 +367,6 @@ Future<void> backgroundSmsHandler(SmsMessage message) async {
     );
 
     // Save directly to SQLite inside the background isolate
-    final db = await DatabaseHelper.instance.database;
     await db.insert(
       'transactions',
       {
