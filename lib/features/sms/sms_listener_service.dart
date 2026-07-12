@@ -132,11 +132,19 @@ class SmsListenerService {
     final isForeground = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
     if (isForeground) {
       _ref.read(pendingCategorizationProvider.notifier).state = txWithAuto;
-    } else {
+    }
+
+    if (tx.type == TransactionType.debit) {
       await NotificationService.instance.showCategorizationNotification(
         txId: tx.id,
         amount: tx.amount,
         merchant: tx.merchant,
+      );
+    } else {
+      await NotificationService.instance.showTransactionNotification(
+        amount: tx.amount,
+        merchant: tx.merchant,
+        isDebit: false,
       );
     }
   }
@@ -203,13 +211,19 @@ Future<void> backgroundSmsHandler(SmsMessage message) async {
     );
     DatabaseHelper.instance.notifyChange('transactions');
 
-    // Trigger local notification with quick category choice buttons
-    if (category == 'Other' && tx.type == TransactionType.debit) {
-      await NotificationService.instance.initialize();
+    // Trigger local notification
+    await NotificationService.instance.initialize();
+    if (tx.type == TransactionType.debit) {
       await NotificationService.instance.showCategorizationNotification(
         txId: tx.id,
         amount: tx.amount,
         merchant: tx.merchant,
+      );
+    } else {
+      await NotificationService.instance.showTransactionNotification(
+        amount: tx.amount,
+        merchant: tx.merchant,
+        isDebit: false,
       );
     }
   } catch (e) {

@@ -115,6 +115,32 @@ class NotificationService {
       payload: txId,
     );
   }
+
+  Future<void> showTransactionNotification({
+    required double amount,
+    required String merchant,
+    required bool isDebit,
+  }) async {
+    const androidDetails = AndroidNotificationDetails(
+      'transaction_channel',
+      'Transaction Alerts',
+      channelDescription: 'Alerts for incoming and outgoing transactions',
+      importance: Importance.max,
+      priority: Priority.high,
+    );
+
+    const notificationDetails = NotificationDetails(android: androidDetails);
+
+    final type = isDebit ? 'Debited to' : 'Credited from';
+    final emoji = isDebit ? '🔴' : '🟢';
+
+    await _localNotificationsPlugin.show(
+      DateTime.now().millisecond,
+      'YourCA Transaction Alert',
+      '$emoji \u20B9${amount.toStringAsFixed(2)} $type "$merchant"',
+      notificationDetails,
+    );
+  }
 }
 
 const AndroidInitializationSettings androidParagraphInitializationSettings =
