@@ -249,6 +249,15 @@ class SmsListenerService {
         BankSmsParser.instance.parse(body: body, sender: sender);
     if (result == null) return;
 
+    // Prevent duplicate insertion
+    final db = await DatabaseHelper.instance.database;
+    final duplicates = await db.query(
+      'transactions',
+      where: 'raw_text = ?' + (result.reference != null ? ' OR bank_reference = ?' : ''),
+      whereArgs: [body, if (result.reference != null) result.reference!],
+    );
+    if (duplicates.isNotEmpty) return;
+
     final userId = _ref.read(currentUserIdProvider);
     if (userId == null) return;
 
@@ -321,6 +330,15 @@ Future<void> backgroundSmsHandler(SmsMessage message) async {
 
     final result = BankSmsParser.instance.parse(body: body, sender: sender);
     if (result == null) return;
+
+    // Prevent duplicate insertion in background isolate
+    final db = await DatabaseHelper.instance.database;
+    final duplicates = await db.query(
+      'transactions',
+      where: 'raw_text = ?' + (result.reference != null ? ' OR bank_reference = ?' : ''),
+      whereArgs: [body, if (result.reference != null) result.reference!],
+    );
+    if (duplicates.isNotEmpty) return;
 
     final prefs = await SharedPreferences.getInstance();
     final userId = prefs.getString('stable_user_id') ?? FirebaseAuth.instance.currentUser?.uid;
