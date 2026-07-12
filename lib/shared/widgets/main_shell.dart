@@ -199,8 +199,8 @@ class _InAppCategorizationDialogState extends ConsumerState<_InAppCategorization
             const SizedBox(height: 10),
 
             // Categories Wrap
-            SizedBox(
-              maxHeight: 180,
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 180),
               child: SingleChildScrollView(
                 child: Wrap(
                   spacing: 8,
