@@ -291,10 +291,7 @@ class SmsListenerService {
     await _ref.read(transactionRepositoryProvider).add(txWithAuto);
     _ref.read(pendingConfirmTxIdsProvider.notifier).update((state) => {...state, tx.id});
 
-    final isForeground = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
-    if (isForeground) {
-      _ref.read(pendingCategorizationProvider.notifier).state = txWithAuto;
-    }
+    _ref.read(pendingCategorizationProvider.notifier).state = txWithAuto;
 
     if (tx.type == TransactionType.debit) {
       await NotificationService.instance.showCategorizationNotification(
