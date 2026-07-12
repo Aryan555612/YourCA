@@ -9,6 +9,10 @@ import '../../core/constants/app_categories.dart';
 import '../../shared/models/models.dart';
 import '../../shared/repositories/transaction_repository.dart';
 import '../../features/auth/auth_provider.dart';
+import 'dart:io';
+import 'package:csv/csv.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:intl/intl.dart';
 
 // â”€â”€ Providers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -46,6 +50,11 @@ class TransactionListScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Transactions'),
         actions: [
+          IconButton(
+            onPressed: () => _showExportDialog(context, ref),
+            icon: const Icon(Icons.download_rounded),
+            tooltip: 'Export CSV',
+          ),
           IconButton(
             onPressed: () => context.pushNamed('csvImport'),
             icon: const Icon(Icons.upload_file_rounded),
@@ -389,6 +398,335 @@ class _ShimmerList extends StatelessWidget {
             color: AppColors.surfaceVariant,
             borderRadius: BorderRadius.circular(16),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+void _showExportDialog(BuildContext context, WidgetRef ref) {
+  showDialog(
+    context: context,
+    builder: (context) => const _ExportDialog(),
+  );
+}
+
+class _ExportDialog extends ConsumerStatefulWidget {
+  const _ExportDialog();
+
+  @override
+  ConsumerState<_ExportDialog> createState() => _ExportDialogState();
+}
+
+class _ExportDialogState extends ConsumerState<_ExportDialog> {
+  bool _isByMonth = true;
+  late DateTime _selectedMonth;
+  late DateTime _startDate;
+  late DateTime _endDate;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _selectedMonth = DateTime(now.year, now.month, 1);
+    _startDate = DateTime(now.year, now.month, 1);
+    _endDate = DateTime(now.year, now.month, now.day);
+  }
+
+  Future<void> _selectStartDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _startDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) {
+      setState(() {
+        _startDate = picked;
+        if (_startDate.isAfter(_endDate)) {
+          _endDate = _startDate;
+        }
+      });
+    }
+  }
+
+  Future<void> _selectEndDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _endDate,
+      firstDate: _startDate,
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) {
+      setState(() {
+        _endDate = picked;
+      });
+    }
+  }
+
+  Future<void> _export() async {
+    final userId = ref.read(currentUserIdProvider);
+    if (userId == null) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      DateTime start;
+      DateTime end;
+
+      if (_isByMonth) {
+        start = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
+        end = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0, 23, 59, 59);
+      } else {
+        start = DateTime(_startDate.year, _startDate.month, _startDate.day);
+        end = DateTime(_endDate.year, _endDate.month, _endDate.day, 23, 59, 59);
+      }
+
+      final repo = ref.read(transactionRepositoryProvider);
+      final txs = await repo.fetchDateRange(userId, start, end);
+
+      if (txs.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('No transactions found in the selected range.'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      // Generate CSV
+      final headers = ['Date', 'Merchant', 'Amount', 'Type', 'Category', 'Reference', 'Note'];
+      final List<List<dynamic>> rows = [headers];
+      for (final tx in txs) {
+        rows.add([
+          DateFormat('yyyy-MM-dd HH:mm:ss').format(tx.date),
+          tx.merchant,
+          tx.amount,
+          tx.type.name,
+          tx.category,
+          tx.bankReference ?? '',
+          tx.note ?? '',
+        ]);
+      }
+      final csvData = const ListToCsvConverter().convert(rows);
+
+      // Save file to Downloads folder
+      Directory? directory;
+      if (Platform.isAndroid) {
+        directory = await getDownloadsDirectory();
+      }
+      directory ??= await getApplicationDocumentsDirectory();
+
+      final dateStr = _isByMonth
+          ? DateFormat('yyyy_MM').format(_selectedMonth)
+          : '${DateFormat('yyyy-MM-dd').format(start)}_to_${DateFormat('yyyy-MM-dd').format(end)}';
+      final filename = 'YourCA_export_$dateStr.csv';
+      final file = File('${directory.path}/$filename');
+      await file.writeAsString(csvData);
+
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✔ Saved CSV to phone storage: $filename'),
+            backgroundColor: AppColors.primary,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error exporting file: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final monthsList = List.generate(12, (index) {
+      final now = DateTime.now();
+      return DateTime(now.year, now.month - index, 1);
+    });
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Dialog(
+      backgroundColor: AppColors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.download_for_offline_rounded, color: AppColors.primary, size: 24),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Export Transactions',
+                    style: AppTextStyles.headlineSmall.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            
+            // Segmented/Radio controls
+            Row(
+              children: [
+                Expanded(
+                  child: ChoiceChip(
+                    label: const Center(child: Text('By Month')),
+                    selected: _isByMonth,
+                    onSelected: (val) {
+                      if (val) setState(() => _isByMonth = true);
+                    },
+                    selectedColor: AppColors.primary,
+                    labelStyle: TextStyle(
+                      color: _isByMonth ? Colors.white : (isDark ? Colors.white70 : Colors.black87),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ChoiceChip(
+                    label: const Center(child: Text('Custom Range')),
+                    selected: !_isByMonth,
+                    onSelected: (val) {
+                      if (val) setState(() => _isByMonth = false);
+                    },
+                    selectedColor: AppColors.primary,
+                    labelStyle: TextStyle(
+                      color: !_isByMonth ? Colors.white : (isDark ? Colors.white70 : Colors.black87),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+
+            if (_isByMonth) ...[
+              Text('Select Month', style: AppTextStyles.titleMedium),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.grey[900] : Colors.grey[100],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<DateTime>(
+                    value: _selectedMonth,
+                    isExpanded: true,
+                    dropdownColor: AppColors.surface,
+                    items: monthsList.map((date) {
+                      return DropdownMenuItem<DateTime>(
+                        value: date,
+                        child: Text(DateFormat('MMMM yyyy').format(date)),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() => _selectedMonth = val);
+                      }
+                    },
+                  ),
+                ),
+              ),
+            ] else ...[
+              Text('Select Custom Date Range', style: AppTextStyles.titleMedium),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _selectStartDate,
+                      icon: const Icon(Icons.date_range_rounded, size: 16),
+                      label: Text(
+                        DateFormat('dd-MMM-yyyy').format(_startDate),
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Text('to'),
+                  ),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _selectEndDate,
+                      icon: const Icon(Icons.date_range_rounded, size: 16),
+                      label: Text(
+                        DateFormat('dd-MMM-yyyy').format(_endDate),
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 32),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: _isLoading ? null : () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton(
+                  onPressed: _isLoading ? null : _export,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                        )
+                      : Text(
+                          'Download CSV',
+                          style: AppTextStyles.labelLarge.copyWith(color: Colors.white),
+                        ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

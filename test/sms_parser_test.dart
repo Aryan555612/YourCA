@@ -80,6 +80,34 @@ void main() {
         expect(result.isDebit, true);
         expect(result.merchant, 'Sangitaben Laljibhai Patel');
       });
+
+      test('parses MUCB debit SMS with /Fr. suffix', () {
+        const sms =
+            'Your a/c no. XXXXXXXX9457 is debited for Rs.10.00 on 12-07-2026 and (UPI Ref no 619380347285). '
+            'Info. UPI/619380347285/To:PIYUSH KISHORBHAI PRAJAPATI/Fr. Clear Balance in Your A/C is INR 3176.58. '
+            'In case of unauthorised transaction, click on https://www.mucbank.com/mucbcrms/ or Call on 18002336822 to report. - MUCB';
+
+        final result = parser.parse(body: sms, sender: 'JK-MUCBNK-S');
+
+        expect(result, isNotNull);
+        expect(result!.amount, 10.00);
+        expect(result.isDebit, true);
+        expect(result.merchant, 'Piyush Kishorbhai Prajapati');
+      });
+
+      test('parses MUCB debit SMS for Lenskart and /From: suffix', () {
+        const sms =
+            'Your a/c no. XXXXXXXX9457 is debited for Rs.998.00 on 12-07-2026 and (UPI Ref no 619363130739). '
+            'Info. UPI/619363130739/To:LENSKART PAYU/From:PATEL ARYAN. Clear Balance in Your A/C is INR 2178.58. '
+            'In case of unauthorised transaction, click on https://www.mucbank.com/mucbcrms/ or Call on 18002336822 to report. - MUCB';
+
+        final result = parser.parse(body: sms, sender: 'JX-MUCBNK-S');
+
+        expect(result, isNotNull);
+        expect(result!.amount, 998.00);
+        expect(result.isDebit, true);
+        expect(result.merchant, 'Lenskart Payu');
+      });
     });
 
     // ── Non-bank SMS ─────────────────────────────────────────────────────────

@@ -13,6 +13,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../../core/services/notification_service.dart';
 import 'bank_sms_parser.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../firebase_options.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
+import 'package:permission_handler/permission_handler.dart';
+import '../../features/dashboard/dashboard_screen.dart';
+import '../../features/transactions/transaction_list_screen.dart';
 
 /// Provider that starts the background SMS listener on Android.
 /// No-op on iOS and Web.
@@ -30,7 +36,7 @@ class SmsListenerService {
 
   SmsListenerService(this._ref);
 
-  String autoSelectCategory(String merchant, TransactionType type) {
+  static String autoSelectCategory(String merchant, TransactionType type) {
     final lower = merchant.toLowerCase().trim();
     final companyKeywords = [
       'flipkart', 'amazon', 'myntra', 'ajio', 'meesho', 'nykaa',
@@ -80,11 +86,140 @@ class SmsListenerService {
       onBackgroundMessage: backgroundSmsHandler,
       listenInBackground: true,
     );
+
+    // Sync inbox SMS to catch up on any missing transactions
+    syncInboxSms();
   }
 
   void stop() {
     _isListening = false;
     // Telephony does not expose a stop method; setting flag prevents re-processing
+  }
+
+  /// Queries the SMS inbox for the last 30 days, parses bank alerts,
+  /// and imports missing transactions.
+  Future<void> syncInboxSms() async {
+    try {
+      if (!Platform.isAndroid) return;
+      final userId = _ref.read(currentUserIdProvider);
+      if (userId == null) return;
+
+      // Check permission first (don't request aggressively if denied)
+      final status = await Permission.sms.status;
+      if (!status.isGranted) return;
+
+      final now = DateTime.now();
+      final repo = _ref.read(transactionRepositoryProvider);
+
+      // Determine dynamic start date: look up the last transaction date from SQLite database.
+      // This handles offline gaps of any duration (even multiple months).
+      DateTime startDate;
+      final db = await DatabaseHelper.instance.database;
+      final lastTxRow = await db.query(
+        'transactions',
+        where: 'user_id = ?',
+        whereArgs: [userId],
+        orderBy: 'date DESC',
+        limit: 1,
+      );
+
+      if (lastTxRow.isNotEmpty) {
+        final lastTxDateStr = lastTxRow.first['date'] as String;
+        final lastTxDate = DateTime.parse(lastTxDateStr);
+        // Overlap by 2 days to account for potential timestamp mismatches/delays
+        startDate = lastTxDate.subtract(const Duration(days: 2));
+      } else {
+        // Default to last 30 days if no local transaction data exists
+        startDate = now.subtract(const Duration(days: 30));
+      }
+
+      final existingTxs = await repo.fetchDateRange(userId, startDate, now);
+
+      final existingRefs = existingTxs
+          .map((tx) => tx.bankReference)
+          .where((ref) => ref != null)
+          .cast<String>()
+          .toSet();
+
+      final existingKeys = existingTxs.map((tx) {
+        final dateKey = "${tx.date.year}-${tx.date.month}-${tx.date.day}";
+        return "${tx.amount}_${dateKey}_${tx.merchant.toLowerCase().trim()}";
+      }).toSet();
+
+      // Fetch SMS messages from the dynamic start date
+      final messages = await _telephony.getInboxSms(
+        columns: [SmsColumn.ADDRESS, SmsColumn.BODY, SmsColumn.DATE],
+        filter: SmsFilter.where(SmsColumn.DATE)
+            .greaterThan(startDate.millisecondsSinceEpoch.toString()),
+        sortOrder: [OrderBy(SmsColumn.DATE, sort: Sort.ASC)], // Oldest first
+      );
+
+      bool newTransactionsFound = false;
+
+      for (final message in messages) {
+        final body = message.body ?? '';
+        final sender = message.address ?? '';
+        final timestamp = message.date != null
+            ? DateTime.fromMillisecondsSinceEpoch(message.date!)
+            : DateTime.now();
+
+        final result = BankSmsParser.instance.parse(body: body, sender: sender);
+        if (result == null) continue;
+
+        // Check reference duplicate
+        if (result.reference != null && existingRefs.contains(result.reference)) {
+          continue;
+        }
+
+        // Check unique key duplicate
+        final txDate = result.date != null
+            ? DateTime(result.date!.year, result.date!.month, result.date!.day,
+                timestamp.hour, timestamp.minute, timestamp.second)
+            : timestamp;
+        final dateKey = "${txDate.year}-${txDate.month}-${txDate.day}";
+        final key = "${result.amount}_${dateKey}_${result.merchant.toLowerCase().trim()}";
+        if (existingKeys.contains(key)) {
+          continue;
+        }
+
+        // Create new transaction
+        final category = autoSelectCategory(
+          result.merchant,
+          result.isDebit ? TransactionType.debit : TransactionType.credit,
+        );
+
+        final tx = Transaction(
+          id: const Uuid().v4(),
+          userId: userId,
+          amount: result.amount,
+          type: result.isDebit ? TransactionType.debit : TransactionType.credit,
+          category: category,
+          merchant: result.merchant,
+          date: txDate,
+          source: TransactionSource.sms,
+          rawText: body,
+          createdAt: DateTime.now(),
+          bankReference: result.reference,
+        );
+
+        // Add locally and sync to Firestore
+        await repo.add(tx);
+
+        if (result.reference != null) {
+          existingRefs.add(result.reference!);
+        }
+        existingKeys.add(key);
+        newTransactionsFound = true;
+      }
+
+      if (newTransactionsFound) {
+        _ref.invalidate(monthlySummaryProvider);
+        _ref.invalidate(trendDataProvider);
+        _ref.invalidate(transactionsStreamProvider);
+      }
+    } catch (e) {
+      debugPrint('YourCA SMS Inbox Sync Error: $e');
+    }
   }
 
   Future<void> _handleSms({
@@ -155,7 +290,13 @@ class SmsListenerService {
 Future<void> backgroundSmsHandler(SmsMessage message) async {
   try {
     WidgetsFlutterBinding.ensureInitialized();
-    await Firebase.initializeApp();
+    try {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    } catch (_) {
+      // Duplicate app or options missing
+    }
 
     final body = message.body ?? '';
     final sender = message.address ?? '';
@@ -163,13 +304,13 @@ Future<void> backgroundSmsHandler(SmsMessage message) async {
     final result = BankSmsParser.instance.parse(body: body, sender: sender);
     if (result == null) return;
 
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    final userId = user.uid;
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getString('stable_user_id') ?? FirebaseAuth.instance.currentUser?.uid;
+    if (userId == null) return;
 
-    final category = CategorizationService.instance.categorizeWithType(
+    final category = SmsListenerService.autoSelectCategory(
       result.merchant,
-      isCredit: !result.isDebit,
+      result.isDebit ? TransactionType.debit : TransactionType.credit,
     );
 
     final tx = Transaction(
@@ -210,6 +351,16 @@ Future<void> backgroundSmsHandler(SmsMessage message) async {
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
     DatabaseHelper.instance.notifyChange('transactions');
+
+    // Also sync to cloud Firestore if possible
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('transactions')
+          .doc(tx.id)
+          .set(tx.toFirestore());
+    } catch (_) {}
 
     // Trigger local notification
     await NotificationService.instance.initialize();

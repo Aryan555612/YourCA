@@ -7,13 +7,44 @@ import '../../shared/models/models.dart';
 import '../../shared/repositories/transaction_repository.dart';
 import '../../features/categories/categories_provider.dart';
 import '../../features/sms/sms_listener_service.dart';
+import '../../features/dashboard/dashboard_screen.dart';
+import '../../features/transactions/transaction_list_screen.dart';
 
-class MainShell extends ConsumerWidget {
+class MainShell extends ConsumerStatefulWidget {
   final Widget child;
 
   const MainShell({super.key, required this.child});
 
-  void _showInAppCategorizationDialog(BuildContext context, WidgetRef ref, Transaction tx) {
+  @override
+  ConsumerState<MainShell> createState() => _MainShellState();
+}
+
+class _MainShellState extends ConsumerState<MainShell> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Invalidate providers to force query SQLite database on resumption
+      ref.invalidate(monthlySummaryProvider);
+      ref.invalidate(trendDataProvider);
+      ref.invalidate(transactionsStreamProvider);
+      // Trigger SMS inbox sync to catch up on any transactions received while app was in background
+      ref.read(smsListenerProvider).syncInboxSms();
+    }
+  }
+
+  void _showInAppCategorizationDialog(BuildContext context, Transaction tx) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -24,10 +55,10 @@ class MainShell extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     ref.listen<Transaction?>(pendingCategorizationProvider, (previous, next) {
       if (next != null) {
-        _showInAppCategorizationDialog(context, ref, next);
+        _showInAppCategorizationDialog(context, next);
       }
     });
 
@@ -39,7 +70,7 @@ class MainShell extends ConsumerWidget {
     if (location.startsWith('/categories')) currentIndex = 3;
 
     return Scaffold(
-      body: child,
+      body: widget.child,
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: AppColors.surface,
