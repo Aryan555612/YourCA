@@ -15,10 +15,6 @@ pubspec.lock
 firebase-debug.log
 firestore-debug.log
 
-# ── App Secrets (API keys — NEVER commit) ──────────────────────────────────────
-lib/core/config/secrets.dart
-
-
 # ── Android ────────────────────────────────────────────────────────────────────
 *.keystore
 *.jks

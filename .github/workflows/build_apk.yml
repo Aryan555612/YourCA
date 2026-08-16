@@ -24,9 +24,11 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.27.4'
           channel: 'stable'
           cache: true
+
+      - name: Accept Android Licenses
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
       - name: Install dependencies
         run: flutter pub get
@@ -44,7 +46,7 @@ jobs:
           keytool -genkey -v -keystore android/app/yourca-release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias yourcakey -storepass "YourCA@2024#Secure" -keypass "YourCA@2024#Secure" -dname "CN=YourCA App, OU=Mobile, O=YourCA, L=New Delhi, S=Delhi, C=IN"
           echo "Temporary keystore generated successfully"
 
-      # ── Build signed release APK (for sharing via WhatsApp) ───────────────────
+      # ── Build signed release APK ───────────────────────────────────────────────
       - name: Build signed release APK
         env:
           ANDROID_KEYSTORE_PATH: "yourca-release.jks"
@@ -53,7 +55,7 @@ jobs:
           ANDROID_KEY_PASSWORD: "YourCA@2024#Secure"
         run: flutter build apk --release
 
-      # ── Build signed AAB (for future Play Store use) ───────────────────────────
+      # ── Build signed AAB ───────────────────────────────────────────────────────
       - name: Build signed App Bundle (AAB)
         env:
           ANDROID_KEYSTORE_PATH: "yourca-release.jks"
@@ -62,7 +64,7 @@ jobs:
           ANDROID_KEY_PASSWORD: "YourCA@2024#Secure"
         run: flutter build appbundle --release
 
-      # ── Upload APK (WhatsApp-sharable) ────────────────────────────────────────
+      # ── Upload APK ────────────────────────────────────────────────────────────
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
@@ -70,11 +72,10 @@ jobs:
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
 
-      # ── Upload AAB (Play Store ready) ─────────────────────────────────────────
+      # ── Upload AAB ────────────────────────────────────────────────────────────
       - name: Upload Release AAB
         uses: actions/upload-artifact@v4
         with:
           name: YourCA-release-aab
           path: build/app/outputs/bundle/release/app-release.aab
           retention-days: 30
-
