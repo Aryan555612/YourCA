@@ -2,8 +2,9 @@ plugins {
     id "com.android.application"
     id "dev.flutter.flutter-gradle-plugin"
     id "com.google.gms.google-services"
-    id "kotlin-android"
+    id "org.jetbrains.kotlin.android"
 }
+
 
 def localProperties = new Properties()
 def localPropertiesFile = rootProject.file('local.properties')
@@ -48,7 +49,6 @@ android {
     compileSdkVersion 36
     ndkVersion flutter.ndkVersion
 
-
     compileOptions {
         coreLibraryDesugaringEnabled true
         sourceCompatibility JavaVersion.VERSION_17
@@ -66,7 +66,7 @@ android {
     defaultConfig {
         applicationId "com.yourca.app"
         minSdkVersion 24
-        targetSdkVersion 35
+        targetSdkVersion 36
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         multiDexEnabled true
