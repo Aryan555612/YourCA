@@ -112,64 +112,79 @@ class AuthNotifier extends AsyncNotifier<void> {
     try {
       final cleanEmail = email.toLowerCase().trim();
 
-      // 1. Try Supabase Auth Email OTP
-      bool supabaseSent = false;
+      // 1. Generate a 6-digit verification code
+      final code = (100000 + Random().nextInt(900000)).toString();
+      final expiresAt = DateTime.now().add(const Duration(minutes: 10));
+
+      // 2. Save OTP locally to SharedPreferences for instant offline/online verification
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('pending_otp_code', code);
+      await prefs.setString('pending_otp_email', cleanEmail);
+      await prefs.setInt('pending_otp_expiry', expiresAt.millisecondsSinceEpoch);
+
+      // 3. Save OTP to Cloud Firestore 'otps' collection as cloud backup
       try {
-        await Supabase.instance.client.auth.signInWithOtp(
-          email: cleanEmail,
-        );
-        supabaseSent = true;
-        debugPrint('✅ [SUPABASE AUTH] Email OTP dispatched to $cleanEmail');
+        await FirebaseFirestore.instance.collection('otps').doc('${cleanEmail}_$code').set({
+          'email': cleanEmail,
+          'code': code,
+          'expires_at': expiresAt.toIso8601String(),
+          'created_at': DateTime.now().toIso8601String(),
+        });
       } catch (e) {
-        debugPrint('⚠️ [SUPABASE AUTH OTP NOTICE]: $e');
+        debugPrint('⚠️ [FIRESTORE OTP WRITE WARNING]: $e');
       }
 
-      // 2. Backup Email dispatch via Brevo REST API
-      if (!supabaseSent) {
-        final code = (100000 + Random().nextInt(900000)).toString();
-        final expiresAt = DateTime.now().add(const Duration(minutes: 10));
-
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('pending_otp_code', code);
-        await prefs.setString('pending_otp_email', cleanEmail);
-        await prefs.setInt('pending_otp_expiry', expiresAt.millisecondsSinceEpoch);
-
+      // 4. Try Supabase Auth Email OTP if real Supabase URL is configured
+      if (!AppSecrets.supabaseUrl.contains('your-project.supabase.co')) {
         try {
-          await FirebaseFirestore.instance.collection('otps').doc('${cleanEmail}_$code').set({
-            'email': cleanEmail,
-            'code': code,
-            'expires_at': expiresAt.toIso8601String(),
-            'created_at': DateTime.now().toIso8601String(),
-          });
-        } catch (_) {}
+          await Supabase.instance.client.auth.signInWithOtp(email: cleanEmail);
+          debugPrint('✅ [SUPABASE AUTH] Email OTP dispatched via Supabase to $cleanEmail');
+        } catch (e) {
+          debugPrint('⚠️ [SUPABASE AUTH OTP NOTICE]: $e');
+        }
+      }
 
-        final response = await http.post(
-          Uri.parse('https://api.brevo.com/v3/smtp/email'),
-          headers: {
-            'api-key': AppSecrets.brevoApiKey,
-            'content-type': 'application/json',
-            'accept': 'application/json',
-          },
-          body: jsonEncode({
-            'sender': {'name': 'YourCA Finance', 'email': AppSecrets.brevoSenderEmail},
-            'to': [{'email': cleanEmail}],
-            'subject': '$code is your YourCA verification code',
-            'textContent': 'Your YourCA login verification code is: $code. Valid for 10 minutes.',
-            'htmlContent': '<div style="font-family:Arial,sans-serif;background:#0d0e15;padding:40px 20px;">'
-                '<div style="max-width:480px;margin:auto;background:#161824;border-radius:20px;padding:40px;border:1px solid #2d2f45;">'
-                '<h1 style="color:#6C5CE7;text-align:center;margin:0 0 8px 0;font-size:28px;">YourCA Finance</h1>'
-                '<p style="color:#a0a0b0;text-align:center;margin:0 0 32px 0;font-size:14px;">Personal Finance Planner</p>'
-                '<p style="color:#e0e0e0;font-size:16px;text-align:center;margin-bottom:24px;">Your 6-digit login verification code:</p>'
-                '<div style="background:#0d0e15;border-radius:16px;padding:28px;text-align:center;border:2px solid #6C5CE7;margin-bottom:24px;">'
-                '<span style="font-size:48px;font-weight:900;letter-spacing:14px;color:#6C5CE7;font-family:monospace;">$code</span>'
-                '</div>'
-                '<p style="color:#707080;font-size:13px;text-align:center;margin:0;">'
-                'This code expires in <strong style="color:#a0a0b0;">10 minutes</strong>.<br/>'
-                'If you did not request this, please ignore this email.</p>'
-                '</div></div>',
-          }),
-        );
-        debugPrint('✉️ Brevo fallback dispatch response: ${response.statusCode}');
+      // 5. Direct high-speed REST Email Dispatch via Brevo API
+      debugPrint('✉️ [BREVO OTP DISPATCH] Sending OTP $code to $cleanEmail...');
+      final response = await http.post(
+        Uri.parse('https://api.brevo.com/v3/smtp/email'),
+        headers: {
+          'api-key': AppSecrets.brevoApiKey,
+          'content-type': 'application/json',
+          'accept': 'application/json',
+        },
+        body: jsonEncode({
+          'sender': {'name': 'YourCA Finance', 'email': AppSecrets.brevoSenderEmail},
+          'to': [{'email': cleanEmail}],
+          'subject': '$code is your YourCA verification code',
+          'textContent': 'Your YourCA login verification code is: $code. This code is valid for 10 minutes. If you did not request this, please ignore.',
+          'htmlContent': '''
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"/></head>
+<body style="font-family: Arial, sans-serif; background-color: #0d0e15; margin: 0; padding: 20px; color: #ffffff;">
+  <div style="max-width: 480px; margin: 0 auto; background-color: #161824; border-radius: 16px; padding: 32px; border: 1px solid #2d2f45;">
+    <h1 style="color: #6C5CE7; text-align: center; margin: 0 0 8px 0; font-size: 26px;">YourCA Finance</h1>
+    <p style="color: #a0a0b0; text-align: center; margin: 0 0 24px 0; font-size: 14px;">Personal Finance Planner</p>
+    <p style="color: #e0e0e0; font-size: 15px; text-align: center; margin-bottom: 20px;">Your 6-digit login verification code is:</p>
+    <div style="background: #0d0e15; border-radius: 12px; padding: 20px; text-align: center; border: 2px solid #6C5CE7; margin-bottom: 24px;">
+      <span style="font-size: 40px; font-weight: bold; letter-spacing: 10px; color: #6C5CE7; font-family: monospace;">$code</span>
+    </div>
+    <p style="color: #707080; font-size: 13px; text-align: center; margin: 0;">
+      This code is valid for <strong>10 minutes</strong>.<br/>
+      If you did not request this code, please ignore this email.
+    </p>
+  </div>
+</body>
+</html>
+''',
+        }),
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        debugPrint('✅ [BREVO REST API] OTP Email successfully sent to $cleanEmail (Status ${response.statusCode})');
+      } else {
+        debugPrint('⚠️ [BREVO REST API WARNING] Response status ${response.statusCode}: ${response.body}');
       }
 
       state = const AsyncData(null);
