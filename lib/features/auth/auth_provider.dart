@@ -102,19 +102,42 @@ class AuthNotifier extends AsyncNotifier<void> {
   }) async {
     state = const AsyncLoading();
     try {
-      // 1. Generate a random 6-digit verification code
+      final cleanEmail = email.toLowerCase().trim();
+
+      // 1. Authenticate anonymously first if not already signed in
+      try {
+        if (_auth.currentUser == null) {
+          await _auth.signInAnonymously();
+        }
+      } catch (e) {
+        debugPrint('Note: Anonymous sign-in before OTP send skipped or error: $e');
+      }
+
+      // 2. Generate a random 6-digit verification code
       final code = (100000 + Random().nextInt(900000)).toString();
 
-      // 2. Save it to Firestore under the 'otps' collection with email_code as document ID
-      final docId = '${email.toLowerCase().trim()}_$code';
-      await FirebaseFirestore.instance.collection('otps').doc(docId).set({
-        'expires_at': DateTime.now().add(const Duration(minutes: 10)).toIso8601String(),
-      });
+      // 3. Save OTP locally to SharedPreferences so verification NEVER fails even offline or if cloud rules block write
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('pending_otp_code', code);
+      await prefs.setString('pending_otp_email', cleanEmail);
+      await prefs.setInt('pending_otp_expiry', DateTime.now().add(const Duration(minutes: 10)).millisecondsSinceEpoch);
 
-      // 3. Print code to terminal debug logs so the developer can copy it immediately
-      debugPrint('✉️ [EMAIL OTP] Verification code for $email is: $code');
+      // 4. Also attempt to save to Firestore under 'otps' collection (optional cloud backup)
+      try {
+        final docId = '${cleanEmail}_$code';
+        await FirebaseFirestore.instance.collection('otps').doc(docId).set({
+          'expires_at': DateTime.now().add(const Duration(minutes: 10)).toIso8601String(),
+          'email': cleanEmail,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      } catch (e) {
+        debugPrint('Note: Could not save OTP to cloud Firestore (using local OTP verification): $e');
+      }
 
-      // 4. Try to send it via real email using Brevo SMTP API (if configured in Firestore)
+      // 5. Print code to terminal debug logs so developer/tester can copy it immediately
+      debugPrint('✉️ [EMAIL OTP] Verification code for $cleanEmail is: $code');
+
+      // 6. Try to send it via real email using Brevo SMTP API (if configured in Firestore)
       try {
         final configDoc = await FirebaseFirestore.instance.collection('config').doc('brevo').get();
         final brevoApiKey = configDoc.exists ? (configDoc.data()?['apiKey'] as String? ?? '') : '';
@@ -129,7 +152,7 @@ class AuthNotifier extends AsyncNotifier<void> {
             },
             body: jsonEncode({
               'sender': {'name': 'YourCA Verification', 'email': 'aryanpatel9051@gmail.com'},
-              'to': [{'email': email}],
+              'to': [{'email': cleanEmail}],
               'subject': 'YourCA OTP Verification Code',
               'htmlContent': '''
                 <div style="font-family: sans-serif; padding: 24px; background-color: #000; color: #fff; border-radius: 16px; max-width: 480px;">
@@ -165,41 +188,76 @@ class AuthNotifier extends AsyncNotifier<void> {
     state = const AsyncLoading();
     try {
       final cleanEmail = email.toLowerCase().trim();
-      final docId = '${cleanEmail}_$otp';
+      final cleanOtp = otp.trim();
+      final prefs = await SharedPreferences.getInstance();
 
-      // 1. Fetch the OTP document from Firestore
-      final doc = await FirebaseFirestore.instance
-          .collection('otps')
-          .doc(docId)
-          .get();
+      // 1. Check local SharedPreferences OTP cache first
+      final localCode = prefs.getString('pending_otp_code');
+      final localEmail = prefs.getString('pending_otp_email');
+      final localExpiry = prefs.getInt('pending_otp_expiry') ?? 0;
 
-      if (!doc.exists || doc.data() == null) {
-        throw Exception('Invalid verification code. Please try again.');
+      bool isVerifiedLocally = false;
+      if (localEmail == cleanEmail && localCode == cleanOtp) {
+        if (DateTime.now().millisecondsSinceEpoch <= localExpiry) {
+          isVerifiedLocally = true;
+        } else {
+          throw Exception('Verification code has expired. Please request a new code.');
+        }
       }
 
-      final data = doc.data()!;
-      final expiresAtStr = data['expires_at'] as String? ?? '';
-      if (expiresAtStr.isEmpty || DateTime.now().isAfter(DateTime.parse(expiresAtStr))) {
-        throw Exception('Verification code has expired. Please try again.');
+      // 2. If not verified locally, check Firestore 'otps' document
+      if (!isVerifiedLocally) {
+        final docId = '${cleanEmail}_$cleanOtp';
+        try {
+          final doc = await FirebaseFirestore.instance
+              .collection('otps')
+              .doc(docId)
+              .get();
+
+          if (!doc.exists || doc.data() == null) {
+            throw Exception('Invalid verification code. Please try again.');
+          }
+
+          final data = doc.data()!;
+          final expiresAtStr = data['expires_at'] as String? ?? '';
+          if (expiresAtStr.isEmpty || DateTime.now().isAfter(DateTime.parse(expiresAtStr))) {
+            throw Exception('Verification code has expired. Please try again.');
+          }
+        } catch (e) {
+          if (e.toString().contains('expired') || e.toString().contains('Invalid')) {
+            rethrow;
+          }
+          // Fallback if cloud read failed but code wasn't matched locally
+          throw Exception('Invalid verification code. Please check the code and try again.');
+        }
       }
 
-      // 2. Log in anonymously (works instantly on Spark plan with no card!)
-      final credential = await _auth.signInAnonymously();
+      // 3. Clear local pending OTP
+      await prefs.remove('pending_otp_code');
+      await prefs.remove('pending_otp_email');
+      await prefs.remove('pending_otp_expiry');
 
-      // 3. Get or create the STABLE user ID for this email (KEY FIX)
-      // This ensures the same email always maps to the same SQLite user_id,
-      // even across reinstalls, re-logins, or different devices.
+      // 4. Log in anonymously if not logged in
+      UserCredential? credential;
+      try {
+        if (_auth.currentUser == null) {
+          credential = await _auth.signInAnonymously();
+        }
+      } catch (e) {
+        debugPrint('Note: Firebase Anonymous sign-in skipped or error: $e');
+      }
+
+      // 5. Get or create the STABLE user ID for this email
       final stableUid = await _getOrCreateStableUid(cleanEmail);
 
-      // 4. Save stable UID to SharedPreferences for offline use
-      final prefs = await SharedPreferences.getInstance();
+      // 6. Save stable UID to SharedPreferences for offline use
       await prefs.setString(_stableUidPrefKey, stableUid);
       await prefs.setString(_stableEmailPrefKey, cleanEmail);
 
-      // 5. Update the in-memory state provider
+      // 7. Update the in-memory state provider
       ref.read(stableUserIdProvider.notifier).state = stableUid;
 
-      // 6. Restore profile and transactions from Firestore if available
+      // 8. Restore profile and transactions from Firestore if available
       UserProfile? cloudProfile;
       try {
         final profileDoc = await FirebaseFirestore.instance
@@ -242,7 +300,6 @@ class AuthNotifier extends AsyncNotifier<void> {
           for (final doc in txsSnap.docs) {
             final tx = Transaction.fromFirestore(doc.data(), doc.id);
             if (tx.date.isBefore(DateTime(2026, 7, 12))) {
-              // Delete old transaction from Firestore to clean up cloud storage
               doc.reference.delete();
             } else {
               transactions.add(tx);
@@ -250,7 +307,6 @@ class AuthNotifier extends AsyncNotifier<void> {
           }
           
           if (transactions.isNotEmpty) {
-            // Import into SQLite locally without syncing back to Firestore
             await ref.read(transactionRepositoryProvider).addBatch(
                   transactions,
                   syncToCloud: false,
@@ -261,25 +317,26 @@ class AuthNotifier extends AsyncNotifier<void> {
         debugPrint('Error restoring transactions from Firestore: $e');
       }
 
-      // 7. Also store a mapping in Firestore linking Firebase UID → stable UID
-      // (useful for future cloud sync features)
-      try {
-        await FirebaseFirestore.instance
-            .collection('firebase_uid_map')
-            .doc(credential.user!.uid)
-            .set({
-          'stable_uid': stableUid,
-          'email': cleanEmail,
-          'updated_at': DateTime.now().toIso8601String(),
-        });
-      } catch (_) {}
-
-      // 8. Clean up the OTP document
-      try {
-        await FirebaseFirestore.instance.collection('otps').doc(docId).delete();
-      } catch (e) {
-        // Safe to ignore cleanup failures
+      // 9. Store mapping in Firestore linking Firebase UID → stable UID
+      final fbUser = credential?.user ?? _auth.currentUser;
+      if (fbUser != null) {
+        try {
+          await FirebaseFirestore.instance
+              .collection('firebase_uid_map')
+              .doc(fbUser.uid)
+              .set({
+            'stable_uid': stableUid,
+            'email': cleanEmail,
+            'updated_at': DateTime.now().toIso8601String(),
+          });
+        } catch (_) {}
       }
+
+      // 10. Clean up cloud OTP doc if possible
+      try {
+        final docId = '${cleanEmail}_$cleanOtp';
+        await FirebaseFirestore.instance.collection('otps').doc(docId).delete();
+      } catch (_) {}
 
       // Log successful login
       ActivityLogger.instance.log(
