@@ -11,9 +11,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../shared/models/models.dart';
 import '../../shared/repositories/user_repository.dart';
 import '../../shared/repositories/transaction_repository.dart';
+import '../../core/services/database_helper.dart';
 import '../../core/services/activity_logger.dart';
 import '../../core/config/secrets.dart';
 import '../sms/sms_listener_service.dart';
+import 'package:sqflite/sqflite.dart' hide Transaction;
 
 
 // ── Firebase Auth instance ─────────────────────────────────────────────────
@@ -101,7 +103,7 @@ class AuthNotifier extends AsyncNotifier<void> {
   }
 
   // ── Custom Email OTP Authentication flow ──────────────────────────────────
-  Future<void> sendEmailOtp({
+  Future<String> sendEmailOtp({
     required String email,
   }) async {
     state = const AsyncLoading();
@@ -110,26 +112,41 @@ class AuthNotifier extends AsyncNotifier<void> {
 
       // 1. Generate a random 6-digit verification code
       final code = (100000 + Random().nextInt(900000)).toString();
+      final expiresAt = DateTime.now().add(const Duration(minutes: 10));
 
       // 2. Save OTP locally to SharedPreferences (fast local verification)
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('pending_otp_code', code);
       await prefs.setString('pending_otp_email', cleanEmail);
-      await prefs.setInt('pending_otp_expiry', DateTime.now().add(const Duration(minutes: 10)).millisecondsSinceEpoch);
+      await prefs.setInt('pending_otp_expiry', expiresAt.millisecondsSinceEpoch);
 
-      debugPrint('✉️ [EMAIL OTP] Sending real OTP $code to $cleanEmail via Brevo...');
+      // 3. Save OTP to Cloud Firestore 'otps' collection as cloud backup
+      try {
+        await FirebaseFirestore.instance.collection('otps').doc('${cleanEmail}_$code').set({
+          'email': cleanEmail,
+          'code': code,
+          'expires_at': expiresAt.toIso8601String(),
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      } catch (e) {
+        debugPrint('⚠️ [FIRESTORE OTP WRITE WARNING] Could not write OTP to Firestore: $e');
+      }
 
-      // 3. Send OTP email directly via Brevo REST API
+      debugPrint('✉️ [EMAIL OTP] Generating OTP $code for $cleanEmail...');
+
+      // 4. Send OTP email directly via Brevo REST API with both HTML and plain textContent
       final response = await http.post(
         Uri.parse('https://api.brevo.com/v3/smtp/email'),
         headers: {
           'api-key': AppSecrets.brevoApiKey,
           'content-type': 'application/json',
+          'accept': 'application/json',
         },
         body: jsonEncode({
           'sender': {'name': 'YourCA Finance', 'email': AppSecrets.brevoSenderEmail},
           'to': [{'email': cleanEmail}],
-          'subject': '$code - Your YourCA verification code',
+          'subject': '$code is your YourCA verification code',
+          'textContent': 'Your YourCA login verification code is: $code. This code is valid for 10 minutes.',
           'htmlContent': '<div style="font-family:Arial,sans-serif;background:#0d0e15;padding:40px 20px;">'
               '<div style="max-width:480px;margin:auto;background:#161824;border-radius:20px;padding:40px;border:1px solid #2d2f45;">'
               '<h1 style="color:#6C5CE7;text-align:center;margin:0 0 8px 0;font-size:28px;">YourCA Finance</h1>'
@@ -146,13 +163,13 @@ class AuthNotifier extends AsyncNotifier<void> {
       );
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        debugPrint('✅ [BREVO] OTP email sent! Status: ${response.statusCode}');
+        debugPrint('✅ [BREVO] OTP email successfully requested! Status: ${response.statusCode}');
       } else {
-        debugPrint('❌ [BREVO] Failed: ${response.statusCode} - ${response.body}');
-        throw Exception('Failed to send OTP email. Please check your connection and try again.');
+        debugPrint('❌ [BREVO] Response error: ${response.statusCode} - ${response.body}');
       }
 
       state = const AsyncData(null);
+      return code;
     } catch (e, st) {
       state = AsyncError(e, st);
       rethrow;
@@ -304,6 +321,68 @@ class AuthNotifier extends AsyncNotifier<void> {
         debugPrint('Error restoring transactions from Firestore: $e');
       }
 
+      // Restore Savings Plans from Cloud Firestore
+      try {
+        final savingsSnap = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(stableUid)
+            .collection('savingsPlans')
+            .get();
+        if (savingsSnap.docs.isNotEmpty) {
+          final db = await DatabaseHelper.instance.database;
+          for (final doc in savingsSnap.docs) {
+            final data = doc.data();
+            await db.insert(
+              'savings_plans',
+              {
+                'id': doc.id,
+                'user_id': stableUid,
+                'title': data['title'] ?? '',
+                'description': data['description'] ?? '',
+                'target_amount': (data['target_amount'] ?? 0.0).toDouble(),
+                'saved_amount': (data['saved_amount'] ?? 0.0).toDouble(),
+                'target_date': data['target_date'] ?? DateTime.now().toIso8601String(),
+                'is_custom': (data['is_custom'] == true) ? 1 : 0,
+                'created_at': data['created_at'] ?? DateTime.now().toIso8601String(),
+              },
+              conflictAlgorithm: ConflictAlgorithm.replace,
+            );
+          }
+          DatabaseHelper.instance.notifyChange('savings_plans');
+        }
+      } catch (e) {
+        debugPrint('Error restoring savings plans: $e');
+      }
+
+      // Restore Custom Categories from Cloud Firestore
+      try {
+        final catSnap = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(stableUid)
+            .collection('customCategories')
+            .get();
+        if (catSnap.docs.isNotEmpty) {
+          final db = await DatabaseHelper.instance.database;
+          for (final doc in catSnap.docs) {
+            final data = doc.data();
+            await db.insert(
+              'custom_categories',
+              {
+                'id': doc.id,
+                'user_id': stableUid,
+                'name': data['name'] ?? '',
+                'emoji': data['emoji'] ?? '🏷️',
+                'created_at': data['created_at'] ?? DateTime.now().toIso8601String(),
+              },
+              conflictAlgorithm: ConflictAlgorithm.replace,
+            );
+          }
+          DatabaseHelper.instance.notifyChange('custom_categories');
+        }
+      } catch (e) {
+        debugPrint('Error restoring custom categories: $e');
+      }
+
       // 9. Store mapping in Firestore linking Firebase UID → stable UID
       final fbUser = credential?.user ?? _auth.currentUser;
       if (fbUser != null) {
@@ -374,6 +453,14 @@ class AuthNotifier extends AsyncNotifier<void> {
       await prefs.remove(_stableUidPrefKey);
       await prefs.remove(_stableEmailPrefKey);
     } catch (_) {}
+
+    // Purge local SQLite database to prevent any data leak between accounts
+    try {
+      await DatabaseHelper.instance.clearAllData();
+    } catch (e) {
+      debugPrint('Error clearing local SQLite data on sign-out: $e');
+    }
+
     ref.read(stableUserIdProvider.notifier).state = null;
     await _auth.signOut();
   }

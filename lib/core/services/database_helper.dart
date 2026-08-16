@@ -25,6 +25,21 @@ class DatabaseHelper {
     return _database!;
   }
 
+  /// Purge all local tables (used on logout to ensure data isolation)
+  Future<void> clearAllData() async {
+    final db = await database;
+    await db.delete('transactions');
+    await db.delete('custom_categories');
+    await db.delete('savings_plans');
+    await db.delete('user_profiles');
+    await db.delete('merchant_corrections');
+    notifyChange('transactions');
+    notifyChange('custom_categories');
+    notifyChange('savings_plans');
+    notifyChange('user_profiles');
+    notifyChange('merchant_corrections');
+  }
+
   /// Deduplicate transactions safely in SQLite
   Future<void> cleanDuplicates([Database? targetDb]) async {
     final db = targetDb ?? _database;

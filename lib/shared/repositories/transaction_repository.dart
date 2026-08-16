@@ -129,17 +129,6 @@ class TransactionRepository {
           orderBy: 'date DESC',
           limit: limit * 2,
         );
-        if (maps.isEmpty) {
-          // If no transactions found for this user_id, auto-migrate any orphaned local transactions
-          await migrateUserTransactions(userId);
-          maps = await db.query(
-            'transactions',
-            where: 'user_id = ?',
-            whereArgs: [userId],
-            orderBy: 'date DESC',
-            limit: limit * 2,
-          );
-        }
         final rawList = maps.map((row) => _fromRow(row)).toList();
         final list = _deduplicateList(rawList).take(limit).toList();
         if (!controller.isClosed) controller.add(list);
@@ -295,15 +284,6 @@ class TransactionRepository {
       whereArgs: [userId, start.toIso8601String(), end.toIso8601String()],
       orderBy: 'date DESC',
     );
-    if (maps.isEmpty) {
-      await migrateUserTransactions(userId);
-      maps = await db.query(
-        'transactions',
-        where: 'user_id = ? AND date >= ? AND date <= ?',
-        whereArgs: [userId, start.toIso8601String(), end.toIso8601String()],
-        orderBy: 'date DESC',
-      );
-    }
     final rawList = maps.map((row) => _fromRow(row)).toList();
     return _deduplicateList(rawList);
   }
