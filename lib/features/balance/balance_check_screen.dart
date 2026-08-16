@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +10,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../core/services/activity_logger.dart';
 import '../sms/bank_sms_parser.dart';
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -165,6 +167,18 @@ class _BalanceCheckScreenState extends ConsumerState<BalanceCheckScreen>
       if (found != null) {
         ref.read(balanceResultProvider.notifier).state = found;
         _cardController.forward();
+        // Sync balance snapshot to Firestore
+        _syncBalanceToFirestore(found);
+        // Log balance viewed activity
+        ActivityLogger.instance.log(
+          event: 'balance_viewed',
+          screen: 'balance',
+          details: {
+            'bank': found.bank,
+            'balance': found.balance,
+            'account_suffix': found.accountSuffix,
+          },
+        );
       } else {
         ref.read(balanceErrorProvider.notifier).state =
             'No recent bank balance SMS found.\nPlease make a transaction or check your bank app to trigger an SMS with your balance.';
@@ -173,6 +187,34 @@ class _BalanceCheckScreenState extends ConsumerState<BalanceCheckScreen>
       ref.read(balanceErrorProvider.notifier).state = 'Error reading SMS: $e';
     } finally {
       ref.read(balanceLoadingProvider.notifier).state = false;
+    }
+  }
+
+  /// Syncs a balance snapshot to Firestore under:
+  /// users/{userId}/balanceSnapshots/{timestamp}
+  Future<void> _syncBalanceToFirestore(BalanceParseResult result) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('stable_user_id');
+      if (userId == null) return;
+
+      final now = DateTime.now();
+      final docId = now.millisecondsSinceEpoch.toString();
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('balanceSnapshots')
+          .doc(docId)
+          .set({
+        'balance': result.balance,
+        'bank': result.bank,
+        'account_suffix': result.accountSuffix,
+        'sms_parsed_at': result.parsedAt.toIso8601String(),
+        'viewed_at': now.toIso8601String(),
+      });
+    } catch (_) {
+      // Silently fail — never block the user for cloud sync issues
     }
   }
 
@@ -256,7 +298,7 @@ class _BalanceCheckScreenState extends ConsumerState<BalanceCheckScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Your data stays private',
+                        'Securely synced to your account',
                         style: AppTextStyles.labelMedium.copyWith(
                           color: AppColors.primary,
                           fontWeight: FontWeight.w700,
@@ -264,7 +306,7 @@ class _BalanceCheckScreenState extends ConsumerState<BalanceCheckScreen>
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Balance is synced only from secure local bank notifications on your device. No data is sent to any server. Protected by your 4-digit PIN.',
+                        'Balance is read from your bank SMS and saved to your private YourCA cloud account. Protected by your 4-digit PIN. Only you can access your data.',
                         style: AppTextStyles.bodySmall.copyWith(
                           color: AppColors.textSecondary,
                         ),

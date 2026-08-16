@@ -18,6 +18,8 @@ import 'package:go_router/go_router.dart';
 import '../../features/sms/sms_listener_service.dart';
 import '../../shared/widgets/summary_card.dart';
 import '../categories/categories_provider.dart';
+import '../ipo/providers/ipo_provider.dart';
+import '../ipo/models/ipo_model.dart';
 
 // â”€â”€ Monthly summary provider â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -448,6 +450,10 @@ class _DashboardContent extends ConsumerWidget {
                   ),
                   const SizedBox(height: 24),
 
+                  // Indian Stock Market IPO Tracker Quick Banner
+                  const _IpoDashboardBanner(),
+                  const SizedBox(height: 24),
+
                   // Category pie chart
                   summaryAsync.when(
                     data: (s) => s.categoryBreakdown.isEmpty
@@ -465,6 +471,10 @@ class _DashboardContent extends ConsumerWidget {
                     loading: () => const SizedBox.shrink(),
                     error: (_, __) => const SizedBox.shrink(),
                   ),
+                  const SizedBox(height: 24),
+
+                  // Recent Transactions Section on Dashboard
+                  _RecentTransactionsSection(txsList: txsList),
                   const SizedBox(height: 100),
                 ]),
               ),
@@ -1158,15 +1168,38 @@ class _LegendDot extends StatelessWidget {
 
 // ── Quick Categorization Widget ──────────────────────────────────────────
 
-class _QuickCategorizationCard extends ConsumerWidget {
+// ── Quick Categorization Widget ──────────────────────────────────────────
+
+class _QuickCategorizationCard extends ConsumerStatefulWidget {
   final Transaction tx;
 
   const _QuickCategorizationCard({required this.tx});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_QuickCategorizationCard> createState() => _QuickCategorizationCardState();
+}
+
+class _QuickCategorizationCardState extends ConsumerState<_QuickCategorizationCard> {
+  late TextEditingController _noteController;
+  bool _showNoteField = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _noteController = TextEditingController(text: widget.tx.note ?? '');
+  }
+
+  @override
+  void dispose() {
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final categories = ref.watch(allCategoriesProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final tx = widget.tx;
 
     return Card(
       color: AppColors.primary.withValues(alpha: 0.15),
@@ -1194,12 +1227,54 @@ class _QuickCategorizationCard extends ConsumerWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Text(
-              'A payment of ₹${tx.amount.toStringAsFixed(0)} was made to "${tx.merchant}". Select a category:',
+              'A payment of \u20B9${tx.amount.toStringAsFixed(0)} was made to "${tx.merchant}". Select category & add optional note:',
               style: AppTextStyles.bodyMedium,
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
+
+            // Note Input Toggle Field
+            if (_showNoteField) ...[
+              TextField(
+                controller: _noteController,
+                decoration: InputDecoration(
+                  hintText: 'Add note (e.g. Swiggy lunch, Taxi fare...)',
+                  hintStyle: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  filled: true,
+                  fillColor: AppColors.surface,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: AppColors.border),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ] else ...[
+              InkWell(
+                onTap: () => setState(() => _showNoteField = true),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.edit_note_rounded, size: 16, color: AppColors.primary),
+                      const SizedBox(width: 4),
+                      Text(
+                        _noteController.text.isNotEmpty
+                            ? 'Note: ${_noteController.text}'
+                            : '+ Add Note',
+                        style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+
             SizedBox(
               height: 38,
               child: ListView(
@@ -1216,14 +1291,18 @@ class _QuickCategorizationCard extends ConsumerWidget {
                       avatar: Text(cat.emoji),
                       label: Text(cat.name),
                       onPressed: () async {
-                        final updated = tx.copyWith(category: cat.name);
+                        final noteText = _noteController.text.trim();
+                        final updated = tx.copyWith(
+                          category: cat.name,
+                          note: noteText.isEmpty ? null : noteText,
+                        );
                         await ref.read(transactionRepositoryProvider).update(updated);
                         ref.read(pendingConfirmTxIdsProvider.notifier).update((state) => state.where((id) => id != tx.id).toSet());
                         
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text('Transaction categorized as ${cat.name}'),
+                              content: Text('Saved as ${cat.name}${noteText.isNotEmpty ? " with note" : ""}'),
                               duration: const Duration(seconds: 2),
                             ),
                           );
@@ -1241,6 +1320,397 @@ class _QuickCategorizationCard extends ConsumerWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Recent Transactions Section ──────────────────────────────────────────
+
+class _RecentTransactionsSection extends ConsumerWidget {
+  final List<Transaction> txsList;
+
+  const _RecentTransactionsSection({required this.txsList});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (txsList.isEmpty) return const SizedBox.shrink();
+
+    // Display top 5 recent transactions sorted by date
+    final sorted = List<Transaction>.from(txsList)
+      ..sort((a, b) => b.date.compareTo(a.date));
+    final recent = sorted.take(5).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Recent Transactions', style: AppTextStyles.headlineSmall),
+            TextButton(
+              onPressed: () => context.go('/transactions'),
+              child: Text(
+                'View All',
+                style: AppTextStyles.labelMedium.copyWith(color: AppColors.primary),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ...recent.map((tx) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _RecentTxTile(tx: tx),
+            )),
+      ],
+    );
+  }
+}
+
+class _RecentTxTile extends ConsumerWidget {
+  final Transaction tx;
+
+  const _RecentTxTile({required this.tx});
+
+  void _showNoteModal(BuildContext context, WidgetRef ref) {
+    final noteController = TextEditingController(text: tx.note ?? '');
+    String selectedCategory = tx.category;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.edit_note_rounded, color: AppColors.primary, size: 24),
+                      const SizedBox(width: 8),
+                      Text('Edit Note & Category', style: AppTextStyles.headlineSmall),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => Navigator.of(ctx).pop(),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${tx.merchant} • \u20B9${tx.amount.toStringAsFixed(2)}',
+                    style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Note Input
+                  Text('Transaction Note', style: AppTextStyles.labelMedium),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: noteController,
+                    maxLines: 2,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText: 'Add a note (e.g. Lunch with team, Groceries...)',
+                      filled: true,
+                      fillColor: AppColors.surfaceVariant,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: AppColors.border),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Category Selector
+                  Text('Category', style: AppTextStyles.labelMedium),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: ref.watch(allCategoriesProvider).map((cat) {
+                      final isSel = selectedCategory == cat.name;
+                      return ChoiceChip(
+                        label: Text('${cat.emoji} ${cat.name}'),
+                        selected: isSel,
+                        selectedColor: AppColors.primaryGlow,
+                        onSelected: (val) {
+                          if (val) setModalState(() => selectedCategory = cat.name);
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Save Button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      onPressed: () async {
+                        final newNote = noteController.text.trim();
+                        final updated = tx.copyWith(
+                          note: newNote.isEmpty ? null : newNote,
+                          category: selectedCategory,
+                        );
+                        await ref.read(transactionRepositoryProvider).update(updated);
+                        if (context.mounted) Navigator.of(ctx).pop();
+                      },
+                      icon: const Icon(Icons.check_circle_rounded, size: 18),
+                      label: const Text('Save Note & Category'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isDebit = tx.type == TransactionType.debit;
+    final catInfo = AppCategories.getCategory(tx.category);
+    final hasNote = tx.note != null && tx.note!.trim().isNotEmpty;
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        onTap: () => context.pushNamed('transactionDetail',
+            pathParameters: {'txId': tx.id}),
+        onLongPress: () => _showNoteModal(context, ref),
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: (catInfo.color as Color).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Center(
+                  child: Text(catInfo.emoji, style: const TextStyle(fontSize: 20)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(tx.merchant,
+                        style: AppTextStyles.titleMedium,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${catInfo.emoji} ${tx.category}',
+                      style: AppTextStyles.bodySmall,
+                    ),
+                    if (hasNote) ...[
+                      const SizedBox(height: 3),
+                      Row(
+                        children: [
+                          const Icon(Icons.notes_rounded, size: 12, color: AppColors.primary),
+                          const SizedBox(width: 3),
+                          Expanded(
+                            child: Text(
+                              tx.note!,
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.textPrimary,
+                                fontStyle: FontStyle.italic,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${isDebit ? '-' : '+'}${CurrencyUtils.formatNoDecimal(tx.amount)}',
+                        style: AppTextStyles.moneySmall.copyWith(
+                          color: isDebit ? AppColors.debit : AppColors.credit,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        icon: Icon(
+                          hasNote ? Icons.edit_note_rounded : Icons.note_add_outlined,
+                          size: 16,
+                          color: hasNote ? AppColors.primary : AppColors.textSecondary,
+                        ),
+                        onPressed: () => _showNoteModal(context, ref),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    DateUtils2.toDayMonth(tx.date),
+                    style: AppTextStyles.labelSmall,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── IPO Dashboard Quick Banner ───────────────────────────────────────────────
+
+class _IpoDashboardBanner extends ConsumerWidget {
+  const _IpoDashboardBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ipos = ref.watch(rawIpoListProvider);
+    final activeIpos = ipos.where((e) => e.status == IpoStatus.ongoing).toList();
+    final topIpo = activeIpos.isNotEmpty ? activeIpos.first : (ipos.isNotEmpty ? ipos.first : null);
+
+    if (topIpo == null) return const SizedBox.shrink();
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF151C2E) : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          onTap: () => context.pushNamed('ipo'),
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            gradient: AppColors.primaryGradient,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.candlestick_chart_rounded, color: Colors.white, size: 16),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Indian Stock Market IPO Hub',
+                          style: AppTextStyles.labelLarge.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      'View All →',
+                      style: AppTextStyles.labelMedium.copyWith(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1E2638) : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Row(
+                    children: [
+                      Text(topIpo.logoEmoji, style: const TextStyle(fontSize: 22)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              topIpo.name,
+                              style: AppTextStyles.titleSmall.copyWith(fontWeight: FontWeight.bold),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              'Price: ₹${topIpo.priceBandMax.toStringAsFixed(0)} • Lot: ${topIpo.lotSize}',
+                              style: AppTextStyles.labelSmall.copyWith(color: AppColors.textSecondary),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+                        ),
+                        child: Text(
+                          'GMP +${topIpo.gmpPercent.toStringAsFixed(1)}%',
+                          style: const TextStyle(
+                            color: Color(0xFF10B981),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

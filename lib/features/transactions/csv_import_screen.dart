@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/format_utils.dart';
+import '../../core/services/activity_logger.dart';
 import '../../shared/models/models.dart';
 import '../../shared/repositories/transaction_repository.dart';
 import '../../features/auth/auth_provider.dart';
@@ -72,6 +73,14 @@ class _CsvImportScreenState extends ConsumerState<CsvImportScreen> {
         _parsedRows = _parseRows(rows);
         _isParsing = false;
       });
+      ActivityLogger.instance.log(
+        event: 'csv_import_started',
+        screen: 'csv_import',
+        details: {
+          'file_name': result.files.first.name,
+          'row_count': rows.length - 1,
+        },
+      );
     } catch (e) {
       setState(() {
         _error = 'Failed to parse CSV: $e';
@@ -200,6 +209,15 @@ class _CsvImportScreenState extends ConsumerState<CsvImportScreen> {
         .toList();
 
     await repo.addBatch(transactions);
+
+    ActivityLogger.instance.log(
+      event: 'csv_import_completed',
+      screen: 'csv_import',
+      details: {
+        'imported_count': transactions.length,
+        'file_name': _fileName,
+      },
+    );
 
     setState(() {
       _isImporting = false;

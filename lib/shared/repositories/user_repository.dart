@@ -141,6 +141,20 @@ class UserRepository {
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
     DatabaseHelper.instance.notifyChange('merchant_corrections');
+
+    // Sync merchant correction to Firestore so it's visible in Firebase Console
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('merchantCorrections')
+          .doc(id)
+          .set({
+        'merchant': merchant.toLowerCase().trim(),
+        'category': category,
+        'updated_at': DateTime.now().toIso8601String(),
+      });
+    } catch (_) {}
   }
 
   Future<Map<String, String>> fetchAllCorrections(String userId) async {

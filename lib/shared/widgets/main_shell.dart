@@ -66,8 +66,9 @@ class _MainShellState extends ConsumerState<MainShell> with WidgetsBindingObserv
 
     int currentIndex = 0;
     if (location.startsWith('/transactions')) currentIndex = 1;
-    if (location.startsWith('/savings')) currentIndex = 2;
-    if (location.startsWith('/categories')) currentIndex = 3;
+    if (location.startsWith('/ipo')) currentIndex = 2;
+    if (location.startsWith('/savings')) currentIndex = 3;
+    if (location.startsWith('/categories')) currentIndex = 4;
 
     return Scaffold(
       body: widget.child,
@@ -98,9 +99,12 @@ class _MainShellState extends ConsumerState<MainShell> with WidgetsBindingObserv
                   context.goNamed('transactions');
                   break;
                 case 2:
-                  context.goNamed('savings');
+                  context.goNamed('ipo');
                   break;
                 case 3:
+                  context.goNamed('savings');
+                  break;
+                case 4:
                   context.goNamed('categories');
                   break;
               }
@@ -115,6 +119,11 @@ class _MainShellState extends ConsumerState<MainShell> with WidgetsBindingObserv
                 icon: Icon(Icons.receipt_long_outlined),
                 selectedIcon: Icon(Icons.receipt_long_rounded),
                 label: 'Transactions',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.candlestick_chart_outlined),
+                selectedIcon: Icon(Icons.candlestick_chart_rounded),
+                label: 'IPOs',
               ),
               NavigationDestination(
                 icon: Icon(Icons.savings_outlined),

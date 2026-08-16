@@ -12,6 +12,7 @@ import '../../core/services/database_helper.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../../core/services/notification_service.dart';
+import '../../core/services/activity_logger.dart';
 import 'bank_sms_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../firebase_options.dart';
@@ -235,6 +236,13 @@ class SmsListenerService {
         _ref.invalidate(trendDataProvider);
         _ref.invalidate(transactionsStreamProvider);
       }
+
+      // Log SMS sync completion
+      ActivityLogger.instance.log(
+        event: 'sms_sync_completed',
+        screen: 'background',
+        details: {'new_transactions': newTransactionsFound ? 1 : 0},
+      );
     } catch (e) {
       debugPrint('YourCA SMS Inbox Sync Error: $e');
     }
@@ -293,19 +301,13 @@ class SmsListenerService {
 
     _ref.read(pendingCategorizationProvider.notifier).state = txWithAuto;
 
-    if (tx.type == TransactionType.debit) {
-      await NotificationService.instance.showCategorizationNotification(
-        txId: tx.id,
-        amount: tx.amount,
-        merchant: tx.merchant,
-      );
-    } else {
-      await NotificationService.instance.showTransactionNotification(
-        amount: tx.amount,
-        merchant: tx.merchant,
-        isDebit: false,
-      );
-    }
+    await NotificationService.instance.showTransactionNotification(
+      txId: tx.id,
+      amount: tx.amount,
+      merchant: tx.merchant,
+      isDebit: tx.type == TransactionType.debit,
+      currentCategory: tx.category,
+    );
   }
 }
 
@@ -396,19 +398,13 @@ Future<void> backgroundSmsHandler(SmsMessage message) async {
 
     // Trigger local notification
     await NotificationService.instance.initialize(requestPermission: false);
-    if (tx.type == TransactionType.debit) {
-      await NotificationService.instance.showCategorizationNotification(
-        txId: tx.id,
-        amount: tx.amount,
-        merchant: tx.merchant,
-      );
-    } else {
-      await NotificationService.instance.showTransactionNotification(
-        amount: tx.amount,
-        merchant: tx.merchant,
-        isDebit: false,
-      );
-    }
+    await NotificationService.instance.showTransactionNotification(
+      txId: tx.id,
+      amount: tx.amount,
+      merchant: tx.merchant,
+      isDebit: tx.type == TransactionType.debit,
+      currentCategory: tx.category,
+    );
   } catch (e) {
     debugPrint('YourCA Background SMS Parse Error: $e');
   }

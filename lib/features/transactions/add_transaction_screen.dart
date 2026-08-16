@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../core/services/activity_logger.dart';
 import '../../shared/models/models.dart';
 import '../../shared/repositories/transaction_repository.dart';
 import '../../features/auth/auth_provider.dart';
@@ -130,8 +131,30 @@ class _AddTransactionScreenState extends ConsumerState<AddTransactionScreen>
     try {
       if (widget.editTransaction != null) {
         await repo.update(tx);
+        ActivityLogger.instance.log(
+          event: 'transaction_edited',
+          screen: 'add_transaction',
+          details: {
+            'tx_id': tx.id,
+            'amount': tx.amount,
+            'merchant': tx.merchant,
+            'category': tx.category,
+            'type': tx.type.name,
+          },
+        );
       } else {
         await repo.add(tx);
+        ActivityLogger.instance.log(
+          event: 'transaction_added',
+          screen: 'add_transaction',
+          details: {
+            'amount': tx.amount,
+            'type': tx.type.name,
+            'category': tx.category,
+            'merchant': tx.merchant,
+            'source': tx.source.name,
+          },
+        );
       }
       if (mounted) context.pop();
     } catch (e) {

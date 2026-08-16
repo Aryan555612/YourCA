@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sqflite/sqflite.dart';
 import '../../core/services/database_helper.dart';
+import '../../core/services/activity_logger.dart';
 import '../../shared/models/models.dart';
 import '../auth/auth_provider.dart';
 
@@ -81,6 +83,26 @@ class SavingsPlanRepository {
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
     DatabaseHelper.instance.notifyChange('savings_plans');
+
+    // Sync new savings plan to Firestore
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('savingsPlans')
+          .doc(plan.id)
+          .set(plan.toFirestore());
+    } catch (_) {}
+
+    ActivityLogger.instance.log(
+      event: 'savings_plan_created',
+      screen: 'savings',
+      details: {
+        'plan_id': plan.id,
+        'title': plan.title,
+        'target_amount': plan.targetAmount,
+      },
+    );
   }
 
   Future<void> updateSavedAmount(String userId, String planId, double savedAmount) async {
@@ -92,6 +114,25 @@ class SavingsPlanRepository {
       whereArgs: [planId, userId],
     );
     DatabaseHelper.instance.notifyChange('savings_plans');
+
+    // Sync updated saved amount to Firestore
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('savingsPlans')
+          .doc(planId)
+          .update({'saved_amount': savedAmount});
+    } catch (_) {}
+
+    ActivityLogger.instance.log(
+      event: 'savings_amount_updated',
+      screen: 'savings',
+      details: {
+        'plan_id': planId,
+        'new_saved_amount': savedAmount,
+      },
+    );
   }
 
   Future<void> deletePlan(String userId, String planId) async {
@@ -102,5 +143,21 @@ class SavingsPlanRepository {
       whereArgs: [planId, userId],
     );
     DatabaseHelper.instance.notifyChange('savings_plans');
+
+    // Delete savings plan from Firestore too
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('savingsPlans')
+          .doc(planId)
+          .delete();
+    } catch (_) {}
+
+    ActivityLogger.instance.log(
+      event: 'savings_plan_deleted',
+      screen: 'savings',
+      details: {'plan_id': planId},
+    );
   }
 }

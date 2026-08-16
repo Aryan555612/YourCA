@@ -49,10 +49,11 @@ class DefaultFirebaseOptions {
     measurementId: 'G-V8697QL3NC',
   );
 
+  // ── Android Firebase configuration from google-services.json ─────────────
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyDemoKey1234567890Android',
-    appId: '1:1234567890:android:1234567890abcdef',
-    messagingSenderId: '1234567890',
+    apiKey: 'AIzaSyCHBXIhINSwa0UWg-2OQgp-XCvXnA2teB4',
+    appId: '1:1063393728632:android:5ec49402c375903fc5b58d',
+    messagingSenderId: '1063393728632',
     projectId: 'yourca-31546',
     storageBucket: 'yourca-31546.firebasestorage.app',
   );

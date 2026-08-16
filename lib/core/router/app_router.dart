@@ -15,6 +15,26 @@ import '../../features/categories/categories_screen.dart';
 import '../../features/profile/profile_screen.dart';
 import '../../shared/widgets/main_shell.dart';
 import '../../features/balance/balance_check_screen.dart';
+import '../../features/ipo/screens/ipo_list_screen.dart';
+import '../../features/ipo/screens/ipo_detail_screen.dart';
+import '../../core/services/activity_logger.dart';
+
+// ── Screen view observer ─────────────────────────────────────────────────────
+class _ActivityRouteObserver extends NavigatorObserver {
+  void _log(Route? route) {
+    final name = route?.settings.name ?? route?.settings.arguments?.toString();
+    ActivityLogger.instance.log(
+      event: 'screen_view',
+      screen: name ?? 'unknown',
+    );
+  }
+
+  @override
+  void didPush(Route route, Route? previousRoute) => _log(route);
+
+  @override
+  void didReplace({Route? newRoute, Route? oldRoute}) => _log(newRoute);
+}
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authStateProvider);
@@ -22,6 +42,7 @@ final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/',
     debugLogDiagnostics: false,
+    observers: [_ActivityRouteObserver()],
     redirect: (context, state) {
       if (authState.isLoading) return null; // Wait for loading to finish to prevent flickering
 
@@ -113,6 +134,21 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/balance',
             name: 'balance',
             builder: (context, state) => const BalanceCheckScreen(),
+          ),
+          GoRoute(
+            path: '/ipo',
+            name: 'ipo',
+            builder: (context, state) => const IpoListScreen(),
+            routes: [
+              GoRoute(
+                path: ':ipoId',
+                name: 'ipoDetail',
+                builder: (context, state) {
+                  final ipoId = state.pathParameters['ipoId']!;
+                  return IpoDetailScreen(ipoId: ipoId);
+                },
+              ),
+            ],
           ),
         ],
       ),

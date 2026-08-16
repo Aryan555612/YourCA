@@ -12,28 +12,45 @@ void notificationTapBackground(NotificationResponse notificationResponse) async 
 
     final txId = notificationResponse.payload;
     final actionId = notificationResponse.actionId;
-    if (txId == null || actionId == null) return;
+    if (txId == null) return;
 
+    final user = FirebaseAuth.instance.currentUser;
+    final db = await DatabaseHelper.instance.database;
+
+    // Handle Note input from notification action
+    if (actionId == 'action_add_note' || actionId == 'action_input_note') {
+      final inputNote = notificationResponse.input?.trim();
+      if (inputNote != null && inputNote.isNotEmpty) {
+        await db.update(
+          'transactions',
+          {'note': inputNote},
+          where: 'id = ?',
+          whereArgs: [txId],
+        );
+        DatabaseHelper.instance.notifyChange('transactions');
+        debugPrint('YourCA Notification Callback: updated tx $txId with note "$inputNote"');
+        return;
+      }
+    }
+
+    // Handle Category actions
     String? category;
     if (actionId == 'action_food') category = 'Food & Dining';
     if (actionId == 'action_shopping') category = 'Shopping';
     if (actionId == 'action_transport') category = 'Transport';
-    if (category == null) return;
+    if (actionId == 'action_income') category = 'Income';
+    if (actionId == 'action_person') category = 'Person';
 
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    // Update transaction category directly in SQLite local database
-    final db = await DatabaseHelper.instance.database;
-    await db.update(
-      'transactions',
-      {'category': category},
-      where: 'id = ? AND user_id = ?',
-      whereArgs: [txId, user.uid],
-    );
-    DatabaseHelper.instance.notifyChange('transactions');
-
-    debugPrint('YourCA Notification Callback: updated tx $txId to $category in SQLite');
+    if (category != null) {
+      await db.update(
+        'transactions',
+        {'category': category},
+        where: 'id = ?',
+        whereArgs: [txId],
+      );
+      DatabaseHelper.instance.notifyChange('transactions');
+      debugPrint('YourCA Notification Callback: updated tx $txId to category "$category"');
+    }
   } catch (e) {
     debugPrint('YourCA Background Notification Action Error: $e');
   }
@@ -46,11 +63,13 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _localNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
+  static const String channelId = 'yourca_transaction_channel_v4';
+  static const String channelName = 'Transaction Alerts & Notes';
+
   Future<void> initialize({bool requestPermission = true}) async {
     const AndroidInitializationSettings initializationSettingsAndroid =
         AndroidInitializationSettings('@mipmap/ic_launcher');
 
-    // Define dummy settings if platform specific isn't required on non-android
     const InitializationSettings initializationSettingsUnified = InitializationSettings(
       android: initializationSettingsAndroid,
     );
@@ -63,97 +82,135 @@ class NotificationService {
       onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
     );
 
-    if (requestPermission) {
-      try {
-        // Request notifications permission on Android 13+
-        final androidPlugin = _localNotificationsPlugin
-            .resolvePlatformSpecificImplementation<
-                AndroidFlutterLocalNotificationsPlugin>();
-        if (androidPlugin != null) {
+    try {
+      final androidPlugin = _localNotificationsPlugin
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+      if (androidPlugin != null) {
+        // Create high importance Android notification channel
+        const AndroidNotificationChannel channel = AndroidNotificationChannel(
+          channelId,
+          channelName,
+          description: 'Notifications for incoming/outgoing payments with note & category options',
+          importance: Importance.max,
+          playSound: true,
+          enableVibration: true,
+          enableLights: true,
+          showBadge: true,
+        );
+        await androidPlugin.createNotificationChannel(channel);
+
+        if (requestPermission) {
           await androidPlugin.requestNotificationsPermission();
         }
-      } catch (_) {
-        // Safe fallback in case of headless execution contexts
       }
+    } catch (e) {
+      debugPrint('YourCA Notification Initialization Error: $e');
     }
   }
 
-  Future<void> showCategorizationNotification({
+  Future<void> showTransactionNotification({
     required String txId,
     required double amount,
     required String merchant,
+    required bool isDebit,
+    String? currentCategory,
   }) async {
+    final title = isDebit
+        ? '🔴 Payment Sent: \u20B9${amount.toStringAsFixed(2)}'
+        : '🟢 Payment Received: \u20B9${amount.toStringAsFixed(2)}';
+
+    final body = isDebit
+        ? 'Paid to "$merchant". Add a note or tap category below.'
+        : 'Received from "$merchant". Add a note or tap category below.';
+
+    final List<AndroidNotificationAction> actions = isDebit
+        ? [
+            const AndroidNotificationAction(
+              'action_food',
+              '\u{1F354} Food',
+              showsUserInterface: false,
+              cancelNotification: true,
+            ),
+            const AndroidNotificationAction(
+              'action_shopping',
+              '\u{1F6CD} Shopping',
+              showsUserInterface: false,
+              cancelNotification: true,
+            ),
+            const AndroidNotificationAction(
+              'action_add_note',
+              '\u{1F4DD} Add Note',
+              inputs: [
+                AndroidNotificationActionInput(
+                  label: 'Type note for this payment...',
+                )
+              ],
+              showsUserInterface: false,
+              cancelNotification: true,
+            ),
+          ]
+        : [
+            const AndroidNotificationAction(
+              'action_income',
+              '\u{1F4B8} Income',
+              showsUserInterface: false,
+              cancelNotification: true,
+            ),
+            const AndroidNotificationAction(
+              'action_person',
+              '\u{1F464} Person',
+              showsUserInterface: false,
+              cancelNotification: true,
+            ),
+            const AndroidNotificationAction(
+              'action_add_note',
+              '\u{1F4DD} Add Note',
+              inputs: [
+                AndroidNotificationActionInput(
+                  label: 'Type note for this payment...',
+                )
+              ],
+              showsUserInterface: false,
+              cancelNotification: true,
+            ),
+          ];
+
     final androidDetails = AndroidNotificationDetails(
-      'categorization_channel_v3',
-      'Transaction Categorization',
-      channelDescription: 'Prompts to categorize transactions from SMS',
+      channelId,
+      channelName,
+      channelDescription: 'Notifications for incoming/outgoing payments with note & category options',
       importance: Importance.max,
       priority: Priority.high,
       playSound: true,
       enableVibration: true,
       enableLights: true,
-      actions: [
-        const AndroidNotificationAction(
-          'action_food',
-          '\u{1F354} Food',
-          showsUserInterface: false,
-          cancelNotification: true,
-        ),
-        const AndroidNotificationAction(
-          'action_shopping',
-          '\u{1F6CD} Shopping',
-          showsUserInterface: false,
-          cancelNotification: true,
-        ),
-        const AndroidNotificationAction(
-          'action_transport',
-          '\u{1F697} Transport',
-          showsUserInterface: false,
-          cancelNotification: true,
-        ),
-      ],
+      actions: actions,
     );
 
     final notificationDetails = NotificationDetails(android: androidDetails);
 
     await _localNotificationsPlugin.show(
       txId.hashCode,
-      'Categorize Payment of \u20B9${amount.toStringAsFixed(0)}',
-      'Sent to "$merchant". What was this for?',
+      title,
+      body,
       notificationDetails,
       payload: txId,
     );
   }
 
-  Future<void> showTransactionNotification({
+  // Alias for backward compatibility
+  Future<void> showCategorizationNotification({
+    required String txId,
     required double amount,
     required String merchant,
-    required bool isDebit,
   }) async {
-    final androidDetails = AndroidNotificationDetails(
-      'transaction_channel_v3',
-      'Transaction Alerts',
-      channelDescription: 'Alerts for incoming and outgoing transactions',
-      importance: Importance.max,
-      priority: Priority.high,
-      playSound: true,
-      enableVibration: true,
-      enableLights: true,
-    );
-
-    final notificationDetails = NotificationDetails(android: androidDetails);
-
-    final type = isDebit ? 'Debited to' : 'Credited from';
-    final emoji = isDebit ? '🔴' : '🟢';
-
-    await _localNotificationsPlugin.show(
-      DateTime.now().millisecond,
-      'YourCA Transaction Alert',
-      '$emoji \u20B9${amount.toStringAsFixed(2)} $type "$merchant"',
-      notificationDetails,
+    await showTransactionNotification(
+      txId: txId,
+      amount: amount,
+      merchant: merchant,
+      isDebit: true,
     );
   }
 }
 
-const AndroidInitializationSettings androidParagraphInitializationSettings =
-    AndroidInitializationSettings('@mipmap/ic_launcher');

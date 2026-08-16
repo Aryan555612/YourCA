@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'app.dart';
 import 'firebase_options.dart';
 import 'core/services/notification_service.dart';
+import 'core/services/activity_logger.dart';
 import 'features/auth/auth_provider.dart';
 
 void main() async {
@@ -23,6 +24,9 @@ void main() async {
 
   // Initialize SharedPreferences
   final prefs = await SharedPreferences.getInstance();
+
+  // Log app opened event
+  ActivityLogger.instance.log(event: 'app_opened');
 
   // To test with Firebase Emulators locally, uncomment and configure:
   // const host = '10.0.2.2'; // Android emulator → localhost

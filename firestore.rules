@@ -34,6 +34,28 @@ service cloud.firestore {
         allow read, write, delete: if request.auth != null
                                    && request.auth.uid == userId;
       }
+
+      // ── Balance snapshots sub-collection ────────────────────────────────
+      // Stores bank balance viewed by the user, synced from SMS.
+      // Only the owning user can read/write their snapshots.
+      match /balanceSnapshots/{snapshotId} {
+        allow read, write, delete: if request.auth != null
+                                   && request.auth.uid == userId;
+      }
+
+      // ── Savings plans sub-collection ─────────────────────────────────────
+      match /savingsPlans/{planId} {
+        allow read, write, delete: if request.auth != null
+                                   && request.auth.uid == userId;
+      }
+
+      // ── Activity log sub-collection ──────────────────────────────────────
+      // Records all user actions (screen views, transactions, etc.)
+      // Only the owning user can read/write their activity log.
+      match /activityLog/{logId} {
+        allow read, write: if request.auth != null
+                           && request.auth.uid == userId;
+      }
     }
 
     // ── OTP verification documents (Secure OTP verification by Document ID) ──

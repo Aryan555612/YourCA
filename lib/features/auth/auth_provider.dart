@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../shared/models/models.dart';
 import '../../shared/repositories/user_repository.dart';
 import '../../shared/repositories/transaction_repository.dart';
+import '../../core/services/activity_logger.dart';
 
 // ── Firebase Auth instance ─────────────────────────────────────────────────
 final firebaseAuthProvider = Provider<FirebaseAuth>((ref) {
@@ -276,6 +277,13 @@ class AuthNotifier extends AsyncNotifier<void> {
         // Safe to ignore cleanup failures
       }
 
+      // Log successful login
+      ActivityLogger.instance.log(
+        event: 'login_success',
+        screen: 'auth',
+        details: {'email': cleanEmail},
+      );
+
       state = const AsyncData(null);
     } catch (e, st) {
       state = AsyncError(e, st);
@@ -311,6 +319,8 @@ class AuthNotifier extends AsyncNotifier<void> {
   }
 
   Future<void> signOut() async {
+    // Log logout before clearing state
+    ActivityLogger.instance.log(event: 'logout', screen: 'profile');
     // Clear stable ID from memory (not from prefs — preserve for re-login)
     ref.read(stableUserIdProvider.notifier).state = null;
     await _auth.signOut();

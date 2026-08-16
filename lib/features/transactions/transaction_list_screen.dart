@@ -9,6 +9,7 @@ import '../../core/constants/app_categories.dart';
 import '../../shared/models/models.dart';
 import '../../shared/repositories/transaction_repository.dart';
 import '../../features/auth/auth_provider.dart';
+import '../categories/categories_provider.dart';
 import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:path_provider/path_provider.dart';
@@ -276,15 +277,130 @@ class _TransactionCard extends ConsumerWidget {
     }
   }
 
+  void _showNoteModal(BuildContext context, WidgetRef ref) {
+    final noteController = TextEditingController(text: tx.note ?? '');
+    String selectedCategory = tx.category;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.edit_note_rounded, color: AppColors.primary, size: 24),
+                      const SizedBox(width: 8),
+                      Text('Edit Note & Category', style: AppTextStyles.headlineSmall),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => Navigator.of(ctx).pop(),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${tx.merchant} • \u20B9${tx.amount.toStringAsFixed(2)}',
+                    style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Note Input
+                  Text('Transaction Note', style: AppTextStyles.labelMedium),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: noteController,
+                    maxLines: 2,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText: 'Add a note (e.g. Lunch with team, Groceries...)',
+                      filled: true,
+                      fillColor: AppColors.surfaceVariant,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: AppColors.border),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Category Selector
+                  Text('Category', style: AppTextStyles.labelMedium),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: ref.watch(allCategoriesProvider).map((cat) {
+                      final isSel = selectedCategory == cat.name;
+                      return ChoiceChip(
+                        label: Text('${cat.emoji} ${cat.name}'),
+                        selected: isSel,
+                        selectedColor: AppColors.primaryGlow,
+                        onSelected: (val) {
+                          if (val) setModalState(() => selectedCategory = cat.name);
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Save Button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      onPressed: () async {
+                        final newNote = noteController.text.trim();
+                        final updated = tx.copyWith(
+                          note: newNote.isEmpty ? null : newNote,
+                          category: selectedCategory,
+                        );
+                        await ref.read(transactionRepositoryProvider).update(updated);
+                        if (context.mounted) Navigator.of(ctx).pop();
+                      },
+                      icon: const Icon(Icons.check_circle_rounded, size: 18),
+                      label: const Text('Save Note & Category'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isDebit = tx.type == TransactionType.debit;
     final catInfo = AppCategories.getCategory(tx.category);
+    final hasNote = tx.note != null && tx.note!.trim().isNotEmpty;
 
     return Card(
       child: InkWell(
         onTap: () => context.pushNamed('transactionDetail',
             pathParameters: {'txId': tx.id}),
+        onLongPress: () => _showNoteModal(context, ref),
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -304,7 +420,7 @@ class _TransactionCard extends ConsumerWidget {
                 ),
               ),
               const SizedBox(width: 14),
-              // Merchant + category
+              // Merchant + category + Note
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -318,18 +434,56 @@ class _TransactionCard extends ConsumerWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (hasNote) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.notes_rounded, size: 13, color: AppColors.primary),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              tx.note!,
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.textPrimary,
+                                fontStyle: FontStyle.italic,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
-              // Amount
+              const SizedBox(width: 8),
+              // Amount + Edit Note button
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(
-                    '${isDebit ? '-' : '+'}${CurrencyUtils.formatNoDecimal(tx.amount)}',
-                    style: AppTextStyles.moneySmall.copyWith(
-                      color: isDebit ? AppColors.debit : AppColors.credit,
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${isDebit ? '-' : '+'}${CurrencyUtils.formatNoDecimal(tx.amount)}',
+                        style: AppTextStyles.moneySmall.copyWith(
+                          color: isDebit ? AppColors.debit : AppColors.credit,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        icon: Icon(
+                          hasNote ? Icons.edit_note_rounded : Icons.note_add_outlined,
+                          size: 18,
+                          color: hasNote ? AppColors.primary : AppColors.textSecondary,
+                        ),
+                        onPressed: () => _showNoteModal(context, ref),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 2),
                   Text(
