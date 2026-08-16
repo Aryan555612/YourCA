@@ -12,6 +12,9 @@ import '../../shared/repositories/transaction_repository.dart';
 import '../../shared/repositories/user_repository.dart';
 import '../../features/auth/auth_provider.dart';
 
+import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
+
 final _txDetailProvider =
     FutureProvider.autoDispose.family<Transaction?, String>((ref, txId) async {
   final userId = ref.read(currentUserIdProvider);
@@ -35,7 +38,23 @@ class TransactionDetailScreen extends ConsumerWidget {
         actions: [
           txAsync.whenOrNull(
             data: (tx) => tx != null
-                ? PopupMenuButton<String>(
+                ? Row(
+                    children: [
+                      IconButton(
+                        tooltip: 'Share Receipt',
+                        icon: const Icon(Icons.share_rounded),
+                        onPressed: () {
+                          final text = '💳 *YourCA Transaction Details*\n'
+                              'Merchant: ${tx.merchant}\n'
+                              'Amount: ${tx.type == TransactionType.credit ? "+" : "-"}\u20B9${tx.amount.toStringAsFixed(2)}\n'
+                              'Category: ${tx.category}\n'
+                              'Date: ${DateFormat("dd MMM yyyy, hh:mm a").format(tx.date)}\n'
+                              'Ref: ${tx.bankReference ?? "N/A"}\n'
+                              'Note: ${tx.note ?? "N/A"}';
+                          Share.share(text, subject: 'YourCA Transaction Receipt');
+                        },
+                      ),
+                      PopupMenuButton<String>(
                     color: AppColors.surface,
                     onSelected: (val) async {
                       if (val == 'edit') {
@@ -71,7 +90,9 @@ class TransactionDetailScreen extends ConsumerWidget {
                       ),
                     ],
                     icon: const Icon(Icons.more_vert_rounded),
-                  )
+                  ),
+                ],
+              )
                 : null,
           ) ??
               const SizedBox.shrink(),

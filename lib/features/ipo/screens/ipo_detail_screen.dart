@@ -7,6 +7,7 @@ import '../models/ipo_model.dart';
 import '../providers/ipo_provider.dart';
 import '../widgets/ipo_profit_calculator.dart';
 import '../widgets/allotment_checker_dialog.dart';
+import 'package:share_plus/share_plus.dart';
 
 class IpoDetailScreen extends ConsumerWidget {
   final String ipoId;
@@ -34,6 +35,21 @@ class IpoDetailScreen extends ConsumerWidget {
         elevation: 0,
         title: Text(ipo.symbol, style: AppTextStyles.headlineSmall),
         actions: [
+          IconButton(
+            tooltip: 'Share IPO to WhatsApp',
+            icon: const Icon(Icons.share_rounded, color: AppColors.primary),
+            onPressed: () {
+              final text = '🚀 *Indian Stock Market IPO Update*\n\n'
+                  '📌 *${ipo.name}* (${ipo.symbol})\n'
+                  '💰 Price Band: \u20B9${ipo.priceBandMin.toStringAsFixed(0)} - \u20B9${ipo.priceBandMax.toStringAsFixed(0)}\n'
+                  '🔥 Live GMP: +\u20B9${ipo.gmpAmount.toStringAsFixed(0)} (+${ipo.gmpPercent.toStringAsFixed(1)}%)\n'
+                  '📊 Expected Listing: \u20B9${ipo.estimatedListingPrice.toStringAsFixed(0)}\n'
+                  '🏛 Registrar: ${ipo.registrarName}\n'
+                  '📅 Allotment Date: ${_formatDate(ipo.allotmentDate)}\n\n'
+                  'Check Allotment & Track IPOs on *YourCA App*! 📊';
+              Share.share(text, subject: '${ipo.name} IPO Details');
+            },
+          ),
           IconButton(
             icon: Icon(
               ipo.isBookmarked ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,

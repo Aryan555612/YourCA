@@ -14,6 +14,7 @@ import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 
 // â”€â”€ Providers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -619,7 +620,7 @@ class _ExportDialogState extends ConsumerState<_ExportDialog> {
     }
   }
 
-  Future<void> _export() async {
+  Future<void> _export({bool isCsv = false, bool shareFile = true}) async {
     final userId = ref.read(currentUserIdProvider);
     if (userId == null) return;
 
@@ -653,32 +654,6 @@ class _ExportDialogState extends ConsumerState<_ExportDialog> {
         return;
       }
 
-      // Generate Text Report
-      final buffer = StringBuffer();
-      buffer.writeln('==================================================');
-      buffer.writeln('              YourCA TRANSACTION REPORT           ');
-      buffer.writeln('==================================================');
-      buffer.writeln('Date Range: ${DateFormat('dd-MMM-yyyy').format(start)} to ${DateFormat('dd-MMM-yyyy').format(end)}');
-      buffer.writeln('Generated At: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now())}');
-      buffer.writeln('Total Transactions: ${txs.length}');
-      buffer.writeln('--------------------------------------------------\n');
-
-      int index = 1;
-      for (final tx in txs) {
-        final prefix = tx.type == TransactionType.credit ? '+' : '-';
-        buffer.writeln('$index. MERCHANT: ${tx.merchant}');
-        buffer.writeln('   Date: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(tx.date)}');
-        buffer.writeln('   Amount: $prefix\u20B9${tx.amount.toStringAsFixed(2)}');
-        buffer.writeln('   Category: ${tx.category}');
-        buffer.writeln('   Reference: ${tx.bankReference ?? "-"}');
-        buffer.writeln('   Note: ${tx.note ?? "-"}');
-        buffer.writeln('\n--------------------------------------------------\n');
-        index++;
-      }
-
-      final textData = buffer.toString();
-
-      // Save file to Downloads folder
       Directory? directory;
       if (Platform.isAndroid) {
         directory = await getDownloadsDirectory();
@@ -688,18 +663,76 @@ class _ExportDialogState extends ConsumerState<_ExportDialog> {
       final dateStr = _isByMonth
           ? DateFormat('yyyy_MM').format(_selectedMonth)
           : '${DateFormat('yyyy-MM-dd').format(start)}_to_${DateFormat('yyyy-MM-dd').format(end)}';
-      final filename = 'YourCA_export_$dateStr.txt';
-      final file = File('${directory.path}/$filename');
-      await file.writeAsString(textData);
+
+      late File file;
+      if (isCsv) {
+        // Generate CSV File
+        final List<List<dynamic>> rows = [
+          ['Date', 'Merchant', 'Type', 'Amount (INR)', 'Category', 'Bank Reference', 'Note'],
+        ];
+
+        for (final tx in txs) {
+          rows.add([
+            DateFormat('yyyy-MM-dd HH:mm:ss').format(tx.date),
+            tx.merchant,
+            tx.type == TransactionType.credit ? 'CREDIT' : 'DEBIT',
+            tx.amount,
+            tx.category,
+            tx.bankReference ?? '',
+            tx.note ?? '',
+          ]);
+        }
+
+        final csvData = const ListToCsvConverter().convert(rows);
+        file = File('${directory.path}/YourCA_Statement_$dateStr.csv');
+        await file.writeAsString(csvData);
+      } else {
+        // Generate Text Report
+        final buffer = StringBuffer();
+        buffer.writeln('==================================================');
+        buffer.writeln('              YourCA TRANSACTION REPORT           ');
+        buffer.writeln('==================================================');
+        buffer.writeln('Date Range: ${DateFormat('dd-MMM-yyyy').format(start)} to ${DateFormat('dd-MMM-yyyy').format(end)}');
+        buffer.writeln('Generated At: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now())}');
+        buffer.writeln('Total Transactions: ${txs.length}');
+        buffer.writeln('--------------------------------------------------\n');
+
+        int index = 1;
+        for (final tx in txs) {
+          final prefix = tx.type == TransactionType.credit ? '+' : '-';
+          buffer.writeln('$index. MERCHANT: ${tx.merchant}');
+          buffer.writeln('   Date: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(tx.date)}');
+          buffer.writeln('   Amount: $prefix\u20B9${tx.amount.toStringAsFixed(2)}');
+          buffer.writeln('   Category: ${tx.category}');
+          buffer.writeln('   Reference: ${tx.bankReference ?? "-"}');
+          buffer.writeln('   Note: ${tx.note ?? "-"}');
+          buffer.writeln('\n--------------------------------------------------\n');
+          index++;
+        }
+
+        file = File('${directory.path}/YourCA_Report_$dateStr.txt');
+        await file.writeAsString(buffer.toString());
+      }
 
       if (mounted) {
         Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✔ Saved Text report to phone storage: $filename'),
-            backgroundColor: AppColors.primary,
-          ),
+      }
+
+      if (shareFile) {
+        await Share.shareXFiles(
+          [XFile(file.path)],
+          text: 'Here is your YourCA Transaction Statement report ($dateStr).',
+          subject: 'YourCA Financial Report',
         );
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✔ Saved report to phone storage: ${file.path.split('/').last}'),
+              backgroundColor: AppColors.primary,
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -860,37 +893,65 @@ class _ExportDialogState extends ConsumerState<_ExportDialog> {
                 ],
               ),
             ],
-            const SizedBox(height: 32),
+            const SizedBox(height: 24),
 
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: _isLoading ? null : () => Navigator.of(context).pop(),
-                  child: const Text('Cancel'),
+            if (_isLoading)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: CircularProgressIndicator(),
                 ),
-                const SizedBox(width: 12),
-                ElevatedButton(
-                  onPressed: _isLoading ? null : _export,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    minimumSize: const Size(120, 48), // Explicitly override the global theme's double.infinity width
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              )
+            else
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () => _export(isCsv: false, shareFile: true),
+                    icon: const Icon(Icons.share_rounded, color: Colors.white, size: 20),
+                    label: const Text('Share Text Statement Report (WhatsApp / Apps)'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF25D366), // WhatsApp Green
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
                   ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                        )
-                      : Text(
-                          'Download TXT',
-                          style: AppTextStyles.labelLarge.copyWith(color: Colors.white),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _export(isCsv: true, shareFile: true),
+                          icon: const Icon(Icons.table_chart_rounded, size: 18),
+                          label: const Text('Share CSV'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
                         ),
-                ),
-              ],
-            ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _export(isCsv: false, shareFile: false),
+                          icon: const Icon(Icons.download_rounded, size: 18),
+                          label: const Text('Save Local TXT'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                ],
+              ),
           ],
         ),
       ),
