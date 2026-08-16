@@ -67,14 +67,19 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
     setState(() => _isLoading = true);
 
     try {
+      final email = _emailController.text.trim();
       await ref.read(authNotifierProvider.notifier).sendEmailOtp(
-            email: _emailController.text.trim(),
+            email: email,
           );
       if (mounted) {
         setState(() {
           _isLoading = false;
           _codeSent = true;
         });
+        _showSnackBar(
+          'Verification email sent to $email! Check your inbox or tap Quick Auto-Fill.',
+          AppColors.credit,
+        );
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _focusNodes[0].requestFocus();
         });

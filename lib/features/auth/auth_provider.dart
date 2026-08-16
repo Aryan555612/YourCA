@@ -129,7 +129,16 @@ class AuthNotifier extends AsyncNotifier<void> {
       // 4. Print code to terminal debug logs so developer/tester can copy it immediately
       debugPrint('✉️ [EMAIL OTP] Verification code for $cleanEmail is: $code');
 
-      // 5. Try to send it via real email using Brevo SMTP API (with fallback API key)
+      // 5. Multi-channel Email Dispatch
+      // Channel A: Firebase Auth Native Verification Email (dispatched directly from Google servers)
+      try {
+        await _auth.sendPasswordResetEmail(email: cleanEmail);
+        debugPrint('✉️ [FIREBASE EMAIL] Sent native authentication email to: $cleanEmail');
+      } catch (e) {
+        debugPrint('Note: Firebase Auth native email notice: $e');
+      }
+
+      // Channel B: Brevo / Webhook Transactional OTP Email API
       try {
         String brevoApiKey = '';
         try {
@@ -139,43 +148,34 @@ class AuthNotifier extends AsyncNotifier<void> {
           }
         } catch (_) {}
 
-        // Fallback Brevo API Key if Firestore config document is unpopulated
-        if (brevoApiKey.isEmpty) {
-          const parts = [
-            'xkeysib-',
-            '4589d81d2f664a780072b22ce87e35b7',
-            'eef4431e7d0bbec47f48b9074b1e56b8-',
-            'Y3T4BzA10zP8e76R'
-          ];
-          brevoApiKey = parts.join();
-        }
-
-        final url = Uri.parse('https://api.brevo.com/v3/smtp/email');
-        final response = await http.post(
-          url,
-          headers: {
-            'api-key': brevoApiKey,
-            'content-type': 'application/json',
-          },
-          body: jsonEncode({
-            'sender': {'name': 'YourCA Verification', 'email': 'aryanpatel9051@gmail.com'},
-            'to': [{'email': cleanEmail}],
-            'subject': 'YourCA OTP Verification Code: $code',
-            'htmlContent': '''
-              <div style="font-family: sans-serif; padding: 24px; background-color: #000; color: #fff; border-radius: 16px; max-width: 480px;">
-                <h2 style="color: #4D80FF; margin-bottom: 8px;">YourCA</h2>
-                <p style="color: #8C8C8C; font-size: 16px;">Use the following verification code to sign in to your finance tracking account:</p>
-                <div style="background-color: #1A1A1A; padding: 16px; border-radius: 12px; text-align: center; margin: 24px 0;">
-                  <span style="font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #fff;">$code</span>
+        if (brevoApiKey.isNotEmpty) {
+          final url = Uri.parse('https://api.brevo.com/v3/smtp/email');
+          final response = await http.post(
+            url,
+            headers: {
+              'api-key': brevoApiKey,
+              'content-type': 'application/json',
+            },
+            body: jsonEncode({
+              'sender': {'name': 'YourCA Verification', 'email': 'no-reply@yourca.com'},
+              'to': [{'email': cleanEmail}],
+              'subject': 'YourCA OTP Verification Code: $code',
+              'htmlContent': '''
+                <div style="font-family: Arial, sans-serif; padding: 24px; background-color: #0d0e15; color: #ffffff; border-radius: 16px; max-width: 480px; margin: auto;">
+                  <h2 style="color: #6C5CE7; text-align: center; margin-top: 0;">YourCA Finance</h2>
+                  <p style="color: #a0a0b0; font-size: 16px; text-align: center;">Use the following 6-digit code to complete your login:</p>
+                  <div style="background-color: #161824; padding: 20px; border-radius: 12px; text-align: center; margin: 24px 0; border: 1px solid #2d2f45;">
+                    <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #6C5CE7;">$code</span>
+                  </div>
+                  <p style="color: #707080; font-size: 13px; text-align: center;">This code will expire in 10 minutes. If you did not request this code, please ignore this email.</p>
                 </div>
-                <p style="color: #595959; font-size: 12px; margin-top: 24px;">This code will expire in 10 minutes. If you did not request this code, you can safely ignore this email.</p>
-              </div>
-            ''',
-          }),
-        );
-        debugPrint('Brevo send response status: ${response.statusCode}, body: ${response.body}');
+              ''',
+            }),
+          );
+          debugPrint('Brevo email dispatch HTTP status: ${response.statusCode}');
+        }
       } catch (e) {
-        debugPrint('Note: Brevo email dispatch skipped or error: $e');
+        debugPrint('Note: Transactional API dispatch notice: $e');
       }
 
       state = const AsyncData(null);
@@ -396,7 +396,11 @@ class AuthNotifier extends AsyncNotifier<void> {
   Future<void> signOut() async {
     // Log logout before clearing state
     ActivityLogger.instance.log(event: 'logout', screen: 'profile');
-    // Clear stable ID from memory (not from prefs — preserve for re-login)
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_stableUidPrefKey);
+      await prefs.remove(_stableEmailPrefKey);
+    } catch (_) {}
     ref.read(stableUserIdProvider.notifier).state = null;
     await _auth.signOut();
   }

@@ -255,10 +255,11 @@ class SmsListenerService {
 
     // Prevent duplicate insertion
     final db = await DatabaseHelper.instance.database;
+    final hasRef = result.reference != null && result.reference!.trim().isNotEmpty;
     final duplicates = await db.query(
       'transactions',
-      where: 'raw_text = ?' + (result.reference != null ? ' OR bank_reference = ?' : ''),
-      whereArgs: [body, if (result.reference != null) result.reference!],
+      where: 'raw_text = ?' + (hasRef ? ' OR bank_reference = ?' : ''),
+      whereArgs: [body, if (hasRef) result.reference!.trim()],
     );
     if (duplicates.isNotEmpty) return;
 
@@ -275,8 +276,12 @@ class SmsListenerService {
             timestamp.hour, timestamp.minute, timestamp.second)
         : timestamp;
 
+    final String txId = hasRef
+        ? 'tx_ref_${result.reference!.trim()}'
+        : 'tx_${userId}_${result.amount}_${result.merchant.toLowerCase().replaceAll(RegExp(r'\s+'), '_')}_${txDate.toIso8601String().substring(0, 16)}';
+
     final tx = Transaction(
-      id: const Uuid().v4(),
+      id: txId,
       userId: userId,
       amount: result.amount,
       type: result.isDebit ? TransactionType.debit : TransactionType.credit,
@@ -328,10 +333,11 @@ Future<void> backgroundSmsHandler(SmsMessage message) async {
 
     // Prevent duplicate insertion in background isolate
     final db = await DatabaseHelper.instance.database;
+    final hasRef = result.reference != null && result.reference!.trim().isNotEmpty;
     final duplicates = await db.query(
       'transactions',
-      where: 'raw_text = ?' + (result.reference != null ? ' OR bank_reference = ?' : ''),
-      whereArgs: [body, if (result.reference != null) result.reference!],
+      where: 'raw_text = ?' + (hasRef ? ' OR bank_reference = ?' : ''),
+      whereArgs: [body, if (hasRef) result.reference!.trim()],
     );
     if (duplicates.isNotEmpty) return;
 
@@ -344,17 +350,23 @@ Future<void> backgroundSmsHandler(SmsMessage message) async {
       result.isDebit ? TransactionType.debit : TransactionType.credit,
     );
 
+    final txDate = result.date ??
+        (message.date != null
+            ? DateTime.fromMillisecondsSinceEpoch(message.date!)
+            : DateTime.now());
+
+    final String txId = hasRef
+        ? 'tx_ref_${result.reference!.trim()}'
+        : 'tx_${userId}_${result.amount}_${result.merchant.toLowerCase().replaceAll(RegExp(r'\s+'), '_')}_${txDate.toIso8601String().substring(0, 16)}';
+
     final tx = Transaction(
-      id: const Uuid().v4(),
+      id: txId,
       userId: userId,
       amount: result.amount,
       type: result.isDebit ? TransactionType.debit : TransactionType.credit,
       category: category,
       merchant: result.merchant,
-      date: result.date ??
-          (message.date != null
-              ? DateTime.fromMillisecondsSinceEpoch(message.date!)
-              : DateTime.now()),
+      date: txDate,
       source: TransactionSource.sms,
       rawText: body,
       createdAt: DateTime.now(),

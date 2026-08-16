@@ -21,41 +21,53 @@ class DatabaseHelper {
     if (_database != null) return _database!;
     _database = await _initDatabase();
     await _runMigrations(_database!);
-
-    // SQLite Cleanup: Delete duplicate rows in transactions table
-    // 1. Deduplicate by bank_reference (if not null)
-    await _database!.rawDelete('''
-      DELETE FROM transactions 
-      WHERE bank_reference IS NOT NULL 
-        AND id NOT IN (
-          SELECT MIN(id) 
-          FROM transactions 
-          GROUP BY bank_reference
-        )
-    ''');
-
-    // 2. Deduplicate by raw_text (if not null)
-    await _database!.rawDelete('''
-      DELETE FROM transactions 
-      WHERE raw_text IS NOT NULL 
-        AND id NOT IN (
-          SELECT MIN(id) 
-          FROM transactions 
-          GROUP BY raw_text
-        )
-    ''');
-
-    // 3. Deduplicate by unique key: user_id, amount, date, merchant
-    await _database!.rawDelete('''
-      DELETE FROM transactions 
-      WHERE id NOT IN (
-        SELECT MIN(id) 
-        FROM transactions 
-        GROUP BY user_id, amount, date, merchant
-      )
-    ''');
-
+    await cleanDuplicates(_database!);
     return _database!;
+  }
+
+  /// Deduplicate transactions safely in SQLite
+  Future<void> cleanDuplicates([Database? targetDb]) async {
+    final db = targetDb ?? _database;
+    if (db == null) return;
+    try {
+      // 1. Deduplicate by valid non-empty bank_reference
+      await db.rawDelete('''
+        DELETE FROM transactions 
+        WHERE bank_reference IS NOT NULL 
+          AND TRIM(bank_reference) != '' 
+          AND id NOT IN (
+            SELECT MIN(id) 
+            FROM transactions 
+            WHERE bank_reference IS NOT NULL AND TRIM(bank_reference) != ''
+            GROUP BY bank_reference
+          )
+      ''');
+
+      // 2. Deduplicate by valid non-empty raw_text
+      await db.rawDelete('''
+        DELETE FROM transactions 
+        WHERE raw_text IS NOT NULL 
+          AND TRIM(raw_text) != '' 
+          AND id NOT IN (
+            SELECT MIN(id) 
+            FROM transactions 
+            WHERE raw_text IS NOT NULL AND TRIM(raw_text) != ''
+            GROUP BY raw_text
+          )
+      ''');
+
+      // 3. Deduplicate by matching user_id, amount, type, merchant, and minute-level timestamp
+      await db.rawDelete('''
+        DELETE FROM transactions 
+        WHERE id NOT IN (
+          SELECT MIN(id) 
+          FROM transactions 
+          GROUP BY user_id, amount, type, merchant, substr(date, 1, 16)
+        )
+      ''');
+    } catch (e) {
+      // Ignore cleanup errors
+    }
   }
 
   Future<void> _runMigrations(Database db) async {

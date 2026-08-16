@@ -52,13 +52,13 @@ class TransactionRepository {
     };
   }
 
-  // ── Migrate all unassigned/previous transactions in SQLite to the current userId ──
+  // ── Migrate unassigned/anonymous transactions in SQLite to the current userId ──
   Future<void> migrateUserTransactions(String newUserId) async {
     try {
       final db = await _db;
       await db.rawUpdate(
-        'UPDATE transactions SET user_id = ? WHERE user_id != ? OR user_id IS NULL',
-        [newUserId, newUserId],
+        "UPDATE transactions SET user_id = ? WHERE user_id IS NULL OR user_id = '' OR user_id LIKE 'anon_%'",
+        [newUserId],
       );
       DatabaseHelper.instance.notifyChange('transactions');
     } catch (_) {}
@@ -93,6 +93,27 @@ class TransactionRepository {
     return controller.stream;
   }
 
+  // ── Deduplicate list in memory ───────────────────────────────────────────
+  List<Transaction> _deduplicateList(List<Transaction> list) {
+    final Set<String> seenKeys = {};
+    final List<Transaction> result = [];
+    for (final tx in list) {
+      String key;
+      if (tx.bankReference != null && tx.bankReference!.trim().isNotEmpty) {
+        key = 'ref_${tx.bankReference!.trim()}';
+      } else {
+        final dateStr = tx.date.toIso8601String();
+        final dateMinute = dateStr.length >= 16 ? dateStr.substring(0, 16) : dateStr;
+        key = 'tx_${tx.userId}_${tx.amount}_${tx.type.name}_${tx.merchant.toLowerCase().trim()}_$dateMinute';
+      }
+      if (!seenKeys.contains(key)) {
+        seenKeys.add(key);
+        result.add(tx);
+      }
+    }
+    return result;
+  }
+
   // ── Stream recent transactions (paginated) ─────────────────────────────
   Stream<List<Transaction>> watchRecent(String userId, {int limit = 50}) {
     final controller = StreamController<List<Transaction>>();
@@ -100,12 +121,13 @@ class TransactionRepository {
     Future<void> _fetch() async {
       try {
         final db = await _db;
+        await DatabaseHelper.instance.cleanDuplicates(db);
         var maps = await db.query(
           'transactions',
           where: 'user_id = ?',
           whereArgs: [userId],
           orderBy: 'date DESC',
-          limit: limit,
+          limit: limit * 2,
         );
         if (maps.isEmpty) {
           // If no transactions found for this user_id, auto-migrate any orphaned local transactions
@@ -115,10 +137,11 @@ class TransactionRepository {
             where: 'user_id = ?',
             whereArgs: [userId],
             orderBy: 'date DESC',
-            limit: limit,
+            limit: limit * 2,
           );
         }
-        final list = maps.map((row) => _fromRow(row)).toList();
+        final rawList = maps.map((row) => _fromRow(row)).toList();
+        final list = _deduplicateList(rawList).take(limit).toList();
         if (!controller.isClosed) controller.add(list);
       } catch (e) {
         if (!controller.isClosed) controller.addError(e);
@@ -149,6 +172,7 @@ class TransactionRepository {
       _toRow(tx),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+    await DatabaseHelper.instance.cleanDuplicates(db);
     DatabaseHelper.instance.notifyChange('transactions');
 
     if (syncToCloud) {
@@ -164,7 +188,7 @@ class TransactionRepository {
     return tx.id;
   }
 
-  // ── Bulk add (CSV import) ──────────────────────────────────────────────
+  // ── Bulk add (CSV import / Cloud sync) ─────────────────────────────────
   Future<void> addBatch(List<Transaction> transactions, {bool syncToCloud = true}) async {
     if (transactions.isEmpty) return;
     final db = await _db;
@@ -177,6 +201,7 @@ class TransactionRepository {
       );
     }
     await batch.commit(noResult: true);
+    await DatabaseHelper.instance.cleanDuplicates(db);
     DatabaseHelper.instance.notifyChange('transactions');
 
     if (syncToCloud) {
@@ -263,6 +288,7 @@ class TransactionRepository {
   Future<List<Transaction>> fetchDateRange(
       String userId, DateTime start, DateTime end) async {
     final db = await _db;
+    await DatabaseHelper.instance.cleanDuplicates(db);
     var maps = await db.query(
       'transactions',
       where: 'user_id = ? AND date >= ? AND date <= ?',
@@ -278,6 +304,7 @@ class TransactionRepository {
         orderBy: 'date DESC',
       );
     }
-    return maps.map((row) => _fromRow(row)).toList();
+    final rawList = maps.map((row) => _fromRow(row)).toList();
+    return _deduplicateList(rawList);
   }
 }
