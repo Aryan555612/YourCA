@@ -77,7 +77,7 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
           _codeSent = true;
         });
         _showSnackBar(
-          'Verification email sent to $email! Check your inbox or tap Quick Auto-Fill.',
+          'Verification code sent to $email! Please check your inbox.',
           AppColors.credit,
         );
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -115,20 +115,6 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
     }
   }
 
-  Future<void> _autoFillCode() async {
-    final prefs = await SharedPreferences.getInstance();
-    final pendingCode = prefs.getString('pending_otp_code') ?? '';
-    if (pendingCode.isNotEmpty && pendingCode.length == 6) {
-      for (int i = 0; i < 6; i++) {
-        _controllers[i].text = pendingCode[i];
-      }
-      setState(() {});
-      _showSnackBar('OTP Code ($pendingCode) auto-filled successfully!', AppColors.credit);
-    } else {
-      _showSnackBar('No pending code found. Please request a new code.', AppColors.debit);
-    }
-  }
-
   void _showSnackBar(String message, Color bgColor) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -143,49 +129,40 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(gradient: AppColors.backgroundGradient),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24.0),
+          child: SizedBox(
+            height: MediaQuery.of(context).size.height -
+                MediaQuery.of(context).padding.top -
+                MediaQuery.of(context).padding.bottom -
+                48,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 32),
-                
-                // Back button if on verification view
-                if (_codeSent)
-                  IconButton(
-                    onPressed: () => setState(() {
-                      _codeSent = false;
-                      for (final c in _controllers) c.clear();
-                    }),
-                    icon: Icon(Icons.arrow_back_ios_new_rounded,
-                        color: AppColors.textPrimary),
-                  )
-                else
-                  _buildBrandHeader(),
-
-                const SizedBox(height: 32),
-                
-                // Dynamic header titles
-                Text(
-                  _codeSent ? 'Verify your\nemail' : 'Sign in with\nEmail OTP',
-                  style: AppTextStyles.displayMedium.copyWith(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  _codeSent 
-                      ? 'We sent a 6-digit OTP code to ${_emailController.text}'
-                      : 'Enter your email address to receive a verification code.',
-                  style: AppTextStyles.bodyLarge.copyWith(color: AppColors.textSecondary),
-                ),
-                const SizedBox(height: 40),
-
+                _buildBrandHeader(),
+                const Spacer(),
                 Form(
                   key: _formKey,
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Text(
+                        _codeSent ? 'Verify your\nemail' : 'Sign in with\nEmail OTP',
+                        style: AppTextStyles.displaySmall.copyWith(
+                          fontWeight: FontWeight.bold,
+                          height: 1.15,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _codeSent
+                            ? 'We sent a 6-digit OTP code to ${_emailController.text}'
+                            : 'Enter your email address to receive a verification code.',
+                        style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+                      ),
+                      const SizedBox(height: 32),
                       if (!_codeSent) ...[
                         TextFormField(
                           controller: _emailController,
@@ -208,48 +185,6 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
                           label: 'Send OTP',
                         ),
                       ] else ...[
-                        FutureBuilder<SharedPreferences>(
-                          future: SharedPreferences.getInstance(),
-                          builder: (context, snapshot) {
-                            final code = snapshot.data?.getString('pending_otp_code') ?? '';
-                            if (code.isEmpty) return const SizedBox.shrink();
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 24),
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: AppColors.primary.withOpacity(0.3)),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.verified_user_rounded, color: AppColors.primary, size: 28),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'Verification Code: $code',
-                                          style: AppTextStyles.titleMedium.copyWith(
-                                            color: AppColors.primary,
-                                            fontWeight: FontWeight.bold,
-                                            letterSpacing: 1.5,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          'Sent to ${_emailController.text} — tap Auto-Fill below to paste instantly!',
-                                          style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
                         AnimatedBuilder(
                           animation: _shakeAnimation,
                           builder: (context, child) {
@@ -268,20 +203,6 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
                           onPressed: _isLoading ? null : _verifyOtp,
                           isLoading: _isLoading,
                           label: 'Verify OTP',
-                        ),
-                        const SizedBox(height: 16),
-                        Center(
-                          child: TextButton.icon(
-                            onPressed: _autoFillCode,
-                            icon: const Icon(Icons.mark_email_read_outlined, size: 18, color: AppColors.primary),
-                            label: Text(
-                              "Didn't get email? Tap to auto-fill code",
-                              style: AppTextStyles.labelLarge.copyWith(
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
                         ),
                       ],
                     ],

@@ -132,6 +132,14 @@ class AuthNotifier extends AsyncNotifier<void> {
       // 5. Multi-channel Email Dispatch
       // Channel A: Firebase Auth Native Verification Email (dispatched directly from Google servers)
       try {
+        try {
+          await _auth.createUserWithEmailAndPassword(
+            email: cleanEmail,
+            password: 'YourCA_Pass_${cleanEmail.hashCode}',
+          );
+        } catch (_) {
+          // Account already exists in Firebase Auth, proceed to send email
+        }
         await _auth.sendPasswordResetEmail(email: cleanEmail);
         debugPrint('✉️ [FIREBASE EMAIL] Sent native authentication email to: $cleanEmail');
       } catch (e) {
