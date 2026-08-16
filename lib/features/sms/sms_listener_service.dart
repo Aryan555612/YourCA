@@ -124,18 +124,14 @@ class SmsListenerService {
         limit: 1,
       );
 
-      final cutoffDate = DateTime(2026, 7, 12);
       if (lastTxRow.isNotEmpty) {
         final lastTxDateStr = lastTxRow.first['date'] as String;
         final lastTxDate = DateTime.parse(lastTxDateStr);
         // Overlap by 2 days to account for potential timestamp mismatches/delays
         startDate = lastTxDate.subtract(const Duration(days: 2));
       } else {
-        // Fresh install/login: only scan from 00:00:00 of the current date (today) onwards
-        startDate = DateTime(now.year, now.month, now.day);
-      }
-      if (startDate.isBefore(cutoffDate)) {
-        startDate = cutoffDate;
+        // Fresh install/login: scan back 180 days (6 months) to catch all 2-month historical SMS transactions
+        startDate = now.subtract(const Duration(days: 180));
       }
 
       final existingTxs = await repo.fetchDateRange(userId, startDate, now);

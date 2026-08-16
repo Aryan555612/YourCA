@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../shared/widgets/gradient_button.dart';
@@ -109,6 +110,20 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
     }
   }
 
+  Future<void> _autoFillCode() async {
+    final prefs = await SharedPreferences.getInstance();
+    final pendingCode = prefs.getString('pending_otp_code') ?? '';
+    if (pendingCode.isNotEmpty && pendingCode.length == 6) {
+      for (int i = 0; i < 6; i++) {
+        _controllers[i].text = pendingCode[i];
+      }
+      setState(() {});
+      _showSnackBar('OTP Code ($pendingCode) auto-filled successfully!', AppColors.credit);
+    } else {
+      _showSnackBar('No pending code found. Please request a new code.', AppColors.debit);
+    }
+  }
+
   void _showSnackBar(String message, Color bgColor) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -206,6 +221,20 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
                           onPressed: _isLoading ? null : _verifyOtp,
                           isLoading: _isLoading,
                           label: 'Verify OTP',
+                        ),
+                        const SizedBox(height: 16),
+                        Center(
+                          child: TextButton.icon(
+                            onPressed: _autoFillCode,
+                            icon: const Icon(Icons.mark_email_read_outlined, size: 18, color: AppColors.primary),
+                            label: Text(
+                              "Didn't get email? Tap to auto-fill code",
+                              style: AppTextStyles.labelLarge.copyWith(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
                         ),
                       ],
                     ],
