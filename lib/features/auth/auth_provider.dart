@@ -11,6 +11,7 @@ import '../../shared/models/models.dart';
 import '../../shared/repositories/user_repository.dart';
 import '../../shared/repositories/transaction_repository.dart';
 import '../../core/services/activity_logger.dart';
+import '../sms/sms_listener_service.dart';
 
 // ── Firebase Auth instance ─────────────────────────────────────────────────
 final firebaseAuthProvider = Provider<FirebaseAuth>((ref) {
@@ -259,6 +260,20 @@ class AuthNotifier extends AsyncNotifier<void> {
 
       // 7. Update the in-memory state provider
       ref.read(stableUserIdProvider.notifier).state = stableUid;
+
+      // 7.5. Re-claim all local SQLite transactions for this stable user ID
+      try {
+        await ref.read(transactionRepositoryProvider).migrateUserTransactions(stableUid);
+      } catch (e) {
+        debugPrint('Error migrating local transactions to stableUid: $e');
+      }
+
+      // 7.6. Trigger fresh SMS parse for historical SMS transactions
+      try {
+        await ref.read(smsListenerProvider).syncInboxSms();
+      } catch (e) {
+        debugPrint('Error syncing inbox SMS: $e');
+      }
 
       // 8. Restore profile and transactions from Firestore if available
       UserProfile? cloudProfile;

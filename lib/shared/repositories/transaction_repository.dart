@@ -52,6 +52,18 @@ class TransactionRepository {
     };
   }
 
+  // ── Migrate all unassigned/previous transactions in SQLite to the current userId ──
+  Future<void> migrateUserTransactions(String newUserId) async {
+    try {
+      final db = await _db;
+      await db.rawUpdate(
+        'UPDATE transactions SET user_id = ? WHERE user_id != ? OR user_id IS NULL',
+        [newUserId, newUserId],
+      );
+      DatabaseHelper.instance.notifyChange('transactions');
+    } catch (_) {}
+  }
+
   // ── Stream all transactions for the current month ──────────────────────
   Stream<List<Transaction>> watchMonthTransactions(String userId, DateTime month) {
     final controller = StreamController<List<Transaction>>();
@@ -88,13 +100,24 @@ class TransactionRepository {
     Future<void> _fetch() async {
       try {
         final db = await _db;
-        final maps = await db.query(
+        var maps = await db.query(
           'transactions',
           where: 'user_id = ?',
           whereArgs: [userId],
           orderBy: 'date DESC',
           limit: limit,
         );
+        if (maps.isEmpty) {
+          // If no transactions found for this user_id, auto-migrate any orphaned local transactions
+          await migrateUserTransactions(userId);
+          maps = await db.query(
+            'transactions',
+            where: 'user_id = ?',
+            whereArgs: [userId],
+            orderBy: 'date DESC',
+            limit: limit,
+          );
+        }
         final list = maps.map((row) => _fromRow(row)).toList();
         if (!controller.isClosed) controller.add(list);
       } catch (e) {
@@ -240,12 +263,21 @@ class TransactionRepository {
   Future<List<Transaction>> fetchDateRange(
       String userId, DateTime start, DateTime end) async {
     final db = await _db;
-    final maps = await db.query(
+    var maps = await db.query(
       'transactions',
       where: 'user_id = ? AND date >= ? AND date <= ?',
       whereArgs: [userId, start.toIso8601String(), end.toIso8601String()],
       orderBy: 'date DESC',
     );
+    if (maps.isEmpty) {
+      await migrateUserTransactions(userId);
+      maps = await db.query(
+        'transactions',
+        where: 'user_id = ? AND date >= ? AND date <= ?',
+        whereArgs: [userId, start.toIso8601String(), end.toIso8601String()],
+        orderBy: 'date DESC',
+      );
+    }
     return maps.map((row) => _fromRow(row)).toList();
   }
 }
