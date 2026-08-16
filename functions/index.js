@@ -1,8 +1,92 @@
 const functions = require('firebase-functions/v2');
 const admin = require('firebase-admin');
+const nodemailer = require('nodemailer');
 
 admin.initializeApp();
 const db = admin.firestore();
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Brevo SMTP Configuration
+// Replace BREVO_API_KEY_HERE with your actual Brevo API key (xkeysib-...)
+// The API key is used as the SMTP password for Brevo's SMTP server
+// ──────────────────────────────────────────────────────────────────────────────
+const BREVO_API_KEY = 'BREVO_API_KEY_HERE';
+const SENDER_EMAIL = 'aryan555612@gmail.com'; // Your verified sender email in Brevo
+
+const transporter = nodemailer.createTransport({
+  host: 'smtp-relay.brevo.com',
+  port: 587,
+  secure: false,
+  auth: {
+    user: SENDER_EMAIL,
+    pass: BREVO_API_KEY,
+  },
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Cloud Function: sendOtpEmail
+// Called from the Flutter app to send a real 6-digit OTP to the user's Gmail
+// ──────────────────────────────────────────────────────────────────────────────
+exports.sendOtpEmail = functions.https.onCall(
+  { maxInstances: 10 },
+  async (request) => {
+    const { email, code } = request.data;
+
+    if (!email || !code) {
+      throw new functions.https.HttpsError('invalid-argument', 'Email and code are required.');
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+    // Save OTP to Firestore as cloud backup for verification
+    try {
+      const docId = `${cleanEmail}_${code}`;
+      await db.collection('otps').doc(docId).set({
+        email: cleanEmail,
+        code: code,
+        expires_at: expiresAt,
+        created_at: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn('Could not save OTP to Firestore:', err.message);
+    }
+
+    // Send the real OTP email via Brevo SMTP
+    const mailOptions = {
+      from: `"YourCA Finance" <${SENDER_EMAIL}>`,
+      to: cleanEmail,
+      subject: `${code} is your YourCA verification code`,
+      html: `
+        <div style="font-family: Arial, sans-serif; background: #0d0e15; padding: 40px 20px;">
+          <div style="max-width: 480px; margin: auto; background: #161824; border-radius: 20px; padding: 40px; border: 1px solid #2d2f45;">
+            <h1 style="color: #6C5CE7; text-align: center; margin: 0 0 8px 0; font-size: 28px;">YourCA Finance</h1>
+            <p style="color: #a0a0b0; text-align: center; margin: 0 0 32px 0; font-size: 14px;">Personal Finance Planner</p>
+            <p style="color: #e0e0e0; font-size: 16px; text-align: center; margin-bottom: 24px;">
+              Use the following 6-digit code to sign in to your account:
+            </p>
+            <div style="background: #0d0e15; border-radius: 16px; padding: 28px; text-align: center; border: 2px solid #6C5CE7; margin-bottom: 24px;">
+              <span style="font-size: 42px; font-weight: 900; letter-spacing: 12px; color: #6C5CE7; font-family: monospace;">${code}</span>
+            </div>
+            <p style="color: #707080; font-size: 13px; text-align: center; margin: 0;">
+              This code expires in <strong style="color: #a0a0b0;">10 minutes</strong>.<br/>
+              If you did not request this code, please ignore this email.
+            </p>
+          </div>
+        </div>
+      `,
+    };
+
+    try {
+      const info = await transporter.sendMail(mailOptions);
+      console.log(`OTP email sent to ${cleanEmail}, messageId: ${info.messageId}`);
+      return { success: true, messageId: info.messageId };
+    } catch (err) {
+      console.error('Failed to send OTP email:', err);
+      throw new functions.https.HttpsError('internal', `Email delivery failed: ${err.message}`);
+    }
+  }
+);
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Category keyword map (mirrors the Flutter app's categorization_service.dart)
@@ -33,20 +117,16 @@ function categorize(text) {
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Cloud Function: onTransactionCreated
-// Runs server-side categorization as a backup if category is 'Other'
 // ──────────────────────────────────────────────────────────────────────────────
 exports.onTransactionCreated = functions.firestore.onDocumentCreated(
   'users/{userId}/transactions/{txId}',
   async (event) => {
     const snap = event.data;
     if (!snap) return;
-
     const data = snap.data();
-    if (data.category !== 'Other') return; // Already categorized
-
+    if (data.category !== 'Other') return;
     const merchant = data.merchant || '';
     const category = categorize(merchant);
-
     if (category !== 'Other') {
       await snap.ref.update({ category });
     }
@@ -55,8 +135,6 @@ exports.onTransactionCreated = functions.firestore.onDocumentCreated(
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Cloud Function: computeMonthlySummary
-// Called on-demand or by a scheduler to pre-compute monthly summaries
-// for faster dashboard loads at scale.
 // ──────────────────────────────────────────────────────────────────────────────
 exports.computeMonthlySummary = functions.https.onCall(
   { maxInstances: 10 },
@@ -92,11 +170,7 @@ exports.computeMonthlySummary = functions.https.onCall(
     });
 
     const summary = {
-      userId,
-      year,
-      month,
-      totalIncome,
-      totalExpense,
+      userId, year, month, totalIncome, totalExpense,
       netSavings: totalIncome - totalExpense,
       savingsRate: totalIncome > 0 ? (totalIncome - totalExpense) / totalIncome : 0,
       categoryBreakdown,
@@ -104,7 +178,6 @@ exports.computeMonthlySummary = functions.https.onCall(
       computedAt: new Date().toISOString(),
     };
 
-    // Cache in Firestore
     await db
       .collection('users')
       .doc(userId)

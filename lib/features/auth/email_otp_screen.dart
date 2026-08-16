@@ -62,27 +62,6 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
     }
   }
 
-  Future<void> _instantLogin() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _isLoading = true);
-
-    try {
-      final email = _emailController.text.trim();
-      await ref.read(authNotifierProvider.notifier).verifyEmailOtp(
-            email: email,
-            otp: '123456',
-          );
-      if (mounted) {
-        context.goNamed('dashboard');
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        _showSnackBar(e.toString().replaceAll(RegExp(r'\[.*\]'), '').trim(), AppColors.debit);
-      }
-    }
-  }
-
   Future<void> _sendOtp() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
@@ -98,7 +77,7 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
           _codeSent = true;
         });
         _showSnackBar(
-          'Verification email sent! Check inbox or use Master Code 123456.',
+          'Verification code sent to $email! Check your inbox.',
           AppColors.credit,
         );
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -170,7 +149,7 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        _codeSent ? 'Verify your\nemail' : 'Sign in with\nEmail Address',
+                        _codeSent ? 'Verify your\nemail' : 'Sign in with\nEmail OTP',
                         style: AppTextStyles.displaySmall.copyWith(
                           fontWeight: FontWeight.bold,
                           height: 1.15,
@@ -179,8 +158,8 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
                       const SizedBox(height: 12),
                       Text(
                         _codeSent
-                            ? 'We sent a verification code to ${_emailController.text}. (Or enter master code 123456)'
-                            : 'Enter your email address to sign in and load your account data.',
+                            ? 'We sent a 6-digit OTP to ${_emailController.text}. Check your inbox.'
+                            : 'Enter your email address to receive a verification code.',
                         style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
                       ),
                       const SizedBox(height: 32),
@@ -199,27 +178,11 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
                             return null;
                           },
                         ),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 24),
                         GradientButton(
                           onPressed: _isLoading ? null : _sendOtp,
                           isLoading: _isLoading,
-                          label: 'Send OTP Email',
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton(
-                            onPressed: _isLoading ? null : _instantLogin,
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                              side: const BorderSide(color: AppColors.primary, width: 1.5),
-                            ),
-                            child: Text(
-                              'Instant Login to Account',
-                              style: AppTextStyles.titleMedium.copyWith(color: AppColors.primary, fontWeight: FontWeight.bold),
-                            ),
-                          ),
+                          label: 'Send OTP',
                         ),
                       ] else ...[
                         AnimatedBuilder(
@@ -241,19 +204,18 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
                           isLoading: _isLoading,
                           label: 'Verify OTP',
                         ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton(
-                            onPressed: _isLoading ? null : _instantLogin,
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                              side: const BorderSide(color: AppColors.primary, width: 1.5),
-                            ),
+                        const SizedBox(height: 16),
+                        Center(
+                          child: TextButton(
+                            onPressed: _isLoading ? null : () {
+                              setState(() {
+                                _codeSent = false;
+                                for (final c in _controllers) c.clear();
+                              });
+                            },
                             child: Text(
-                              'Instant Login (Master Code 123456)',
-                              style: AppTextStyles.titleMedium.copyWith(color: AppColors.primary, fontWeight: FontWeight.bold),
+                              'Resend OTP / Change Email',
+                              style: AppTextStyles.bodyMedium.copyWith(color: AppColors.primary),
                             ),
                           ),
                         ),
@@ -271,6 +233,7 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
       ),
     );
   }
+
 
   Widget _buildBrandHeader() {
     return Row(

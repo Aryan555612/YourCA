@@ -1,8 +1,8 @@
 import 'dart:math';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:crypto/crypto.dart';
-import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart' show debugPrint;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -108,82 +108,35 @@ class AuthNotifier extends AsyncNotifier<void> {
       // 1. Generate a random 6-digit verification code
       final code = (100000 + Random().nextInt(900000)).toString();
 
-      // 2. Save OTP locally to SharedPreferences so verification NEVER fails even offline or if cloud rules block write
+      // 2. Save OTP locally to SharedPreferences (fast local verification)
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('pending_otp_code', code);
       await prefs.setString('pending_otp_email', cleanEmail);
       await prefs.setInt('pending_otp_expiry', DateTime.now().add(const Duration(minutes: 10)).millisecondsSinceEpoch);
 
-      // 3. Also attempt to save to Firestore under 'otps' collection (optional cloud backup)
+      debugPrint('✉️ [EMAIL OTP] Sending real OTP $code to $cleanEmail via Cloud Function...');
+
+      // 3. Call the Firebase Cloud Function to send real OTP email via Brevo SMTP
       try {
-        final docId = '${cleanEmail}_$code';
-        await FirebaseFirestore.instance.collection('otps').doc(docId).set({
-          'expires_at': DateTime.now().add(const Duration(minutes: 10)).toIso8601String(),
+        final callable = FirebaseFunctions.instance.httpsCallable('sendOtpEmail');
+        final result = await callable.call({
           'email': cleanEmail,
-          'created_at': DateTime.now().toIso8601String(),
+          'code': code,
         });
+        debugPrint('✉️ [CLOUD FUNCTION] Email sent! Result: ${result.data}');
       } catch (e) {
-        debugPrint('Note: Could not save OTP to cloud Firestore (using local OTP verification): $e');
-      }
-
-      // 4. Print code to terminal debug logs so developer/tester can copy it immediately
-      debugPrint('✉️ [EMAIL OTP] Verification code for $cleanEmail is: $code');
-
-      // 5. Multi-channel Email Dispatch
-      // Channel A: Firebase Auth Native Verification Email (dispatched directly from Google servers)
-      try {
+        debugPrint('❌ [CLOUD FUNCTION ERROR] Could not send OTP email: $e');
+        // Still save to Firestore as backup so user can verify if email arrives later
         try {
-          await _auth.createUserWithEmailAndPassword(
-            email: cleanEmail,
-            password: 'YourCA_Pass_${cleanEmail.hashCode}',
-          );
-        } catch (_) {
-          // Account already exists in Firebase Auth, proceed to send email
-        }
-        await _auth.sendPasswordResetEmail(email: cleanEmail);
-        debugPrint('✉️ [FIREBASE EMAIL] Sent native authentication email to: $cleanEmail');
-      } catch (e) {
-        debugPrint('Note: Firebase Auth native email notice: $e');
-      }
-
-      // Channel B: Brevo / Webhook Transactional OTP Email API
-      try {
-        String brevoApiKey = '';
-        try {
-          final configDoc = await FirebaseFirestore.instance.collection('config').doc('brevo').get();
-          if (configDoc.exists && configDoc.data() != null) {
-            brevoApiKey = configDoc.data()?['apiKey'] as String? ?? '';
-          }
+          final docId = '${cleanEmail}_$code';
+          await FirebaseFirestore.instance.collection('otps').doc(docId).set({
+            'expires_at': DateTime.now().add(const Duration(minutes: 10)).toIso8601String(),
+            'email': cleanEmail,
+            'created_at': DateTime.now().toIso8601String(),
+          });
         } catch (_) {}
-
-        if (brevoApiKey.isNotEmpty) {
-          final url = Uri.parse('https://api.brevo.com/v3/smtp/email');
-          final response = await http.post(
-            url,
-            headers: {
-              'api-key': brevoApiKey,
-              'content-type': 'application/json',
-            },
-            body: jsonEncode({
-              'sender': {'name': 'YourCA Verification', 'email': 'no-reply@yourca.com'},
-              'to': [{'email': cleanEmail}],
-              'subject': 'YourCA OTP Verification Code: $code',
-              'htmlContent': '''
-                <div style="font-family: Arial, sans-serif; padding: 24px; background-color: #0d0e15; color: #ffffff; border-radius: 16px; max-width: 480px; margin: auto;">
-                  <h2 style="color: #6C5CE7; text-align: center; margin-top: 0;">YourCA Finance</h2>
-                  <p style="color: #a0a0b0; font-size: 16px; text-align: center;">Use the following 6-digit code to complete your login:</p>
-                  <div style="background-color: #161824; padding: 20px; border-radius: 12px; text-align: center; margin: 24px 0; border: 1px solid #2d2f45;">
-                    <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #6C5CE7;">$code</span>
-                  </div>
-                  <p style="color: #707080; font-size: 13px; text-align: center;">This code will expire in 10 minutes. If you did not request this code, please ignore this email.</p>
-                </div>
-              ''',
-            }),
-          );
-          debugPrint('Brevo email dispatch HTTP status: ${response.statusCode}');
-        }
-      } catch (e) {
-        debugPrint('Note: Transactional API dispatch notice: $e');
+        // Rethrow so user sees the error
+        rethrow;
       }
 
       state = const AsyncData(null);
@@ -203,19 +156,21 @@ class AuthNotifier extends AsyncNotifier<void> {
       final cleanOtp = otp.trim();
       final prefs = await SharedPreferences.getInstance();
 
-      // 1. Check local SharedPreferences OTP cache first
+      // 1. Check local SharedPreferences OTP cache first (set when sendEmailOtp was called)
       final localCode = prefs.getString('pending_otp_code');
       final localEmail = prefs.getString('pending_otp_email');
       final localExpiry = prefs.getInt('pending_otp_expiry') ?? 0;
 
       bool isVerifiedLocally = false;
-      if (cleanOtp == '123456' || (localEmail == cleanEmail && localCode == cleanOtp)) {
-        if (localExpiry == 0 || DateTime.now().millisecondsSinceEpoch <= localExpiry || cleanOtp == '123456') {
+      if (localEmail == cleanEmail && localCode == cleanOtp) {
+        if (DateTime.now().millisecondsSinceEpoch <= localExpiry) {
           isVerifiedLocally = true;
+        } else {
+          throw Exception('Verification code has expired. Please request a new code.');
         }
       }
 
-      // 2. If not verified locally, check Firestore 'otps' document or fallback for 6-digit input
+      // 2. If not verified locally, also check Firestore 'otps' collection as cloud backup
       if (!isVerifiedLocally) {
         final docId = '${cleanEmail}_$cleanOtp';
         try {
@@ -225,13 +180,15 @@ class AuthNotifier extends AsyncNotifier<void> {
               .get();
 
           if (doc.exists && doc.data() != null) {
-            isVerifiedLocally = true;
+            final expiresAt = doc.data()?['expires_at'] as String? ?? '';
+            if (expiresAt.isNotEmpty && DateTime.now().isBefore(DateTime.parse(expiresAt))) {
+              isVerifiedLocally = true;
+            } else {
+              throw Exception('Verification code has expired. Please request a new code.');
+            }
           }
-        } catch (_) {}
-
-        // Fallback: If OTP is 6 digits long, permit verification to guarantee user is never locked out
-        if (cleanOtp.length == 6 && RegExp(r'^\d{6}$').hasMatch(cleanOtp)) {
-          isVerifiedLocally = true;
+        } catch (e) {
+          if (e.toString().contains('expired')) rethrow;
         }
       }
 
