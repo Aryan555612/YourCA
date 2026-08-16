@@ -2,6 +2,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'core/config/secrets.dart';
 import 'app.dart';
 import 'firebase_options.dart';
 import 'core/services/notification_service.dart';
@@ -17,6 +19,15 @@ void main() async {
     );
   } catch (e) {
     // Default app already exists (common during web hot restarts) - ignore
+  }
+
+  try {
+    await Supabase.initialize(
+      url: AppSecrets.supabaseUrl,
+      anonKey: AppSecrets.supabaseAnonKey,
+    );
+  } catch (e) {
+    // Supabase initialization fallback / already initialized
   }
 
   // Initialize notifications

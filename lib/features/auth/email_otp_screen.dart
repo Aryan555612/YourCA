@@ -25,7 +25,6 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
   bool _codeSent = false;
-  String? _generatedCode;
   
   late AnimationController _shakeController;
   late Animation<double> _shakeAnimation;
@@ -63,32 +62,22 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
     }
   }
 
-  void _autoFillOtp(String code) {
-    if (code.length == 6) {
-      for (int i = 0; i < 6; i++) {
-        _controllers[i].text = code[i];
-      }
-      _verifyOtp();
-    }
-  }
-
   Future<void> _sendOtp() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
 
     try {
       final email = _emailController.text.trim();
-      final code = await ref.read(authNotifierProvider.notifier).sendEmailOtp(
+      await ref.read(authNotifierProvider.notifier).sendEmailOtp(
             email: email,
           );
       if (mounted) {
         setState(() {
           _isLoading = false;
           _codeSent = true;
-          _generatedCode = code;
         });
         _showSnackBar(
-          'Verification code sent to $email! Check inbox or tap Auto-Fill below.',
+          'Verification code sent to $email! Please check your email inbox.',
           AppColors.credit,
         );
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -209,60 +198,6 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
                             children: List.generate(6, (index) => _buildOtpField(index)),
                           ),
                         ),
-                        if (_generatedCode != null) ...[
-                          const SizedBox(height: 16),
-                          InkWell(
-                            onTap: () => _autoFillOtp(_generatedCode!),
-                            borderRadius: BorderRadius.circular(16),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withOpacity(0.12),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: AppColors.primary.withOpacity(0.4), width: 1.5),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.flash_on, color: AppColors.primary, size: 22),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'Instant Verification Code',
-                                          style: AppTextStyles.labelSmall.copyWith(color: AppColors.textSecondary),
-                                        ),
-                                        Text(
-                                          _generatedCode!,
-                                          style: AppTextStyles.headlineSmall.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                            color: AppColors.primary,
-                                            letterSpacing: 4,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.primary,
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: Text(
-                                      'Auto-Fill',
-                                      style: AppTextStyles.labelMedium.copyWith(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
                         const SizedBox(height: 24),
                         GradientButton(
                           onPressed: _isLoading ? null : _verifyOtp,

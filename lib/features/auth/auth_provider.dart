@@ -16,6 +16,8 @@ import '../../core/services/activity_logger.dart';
 import '../../core/config/secrets.dart';
 import '../sms/sms_listener_service.dart';
 import 'package:sqflite/sqflite.dart' hide Transaction;
+import 'package:supabase_flutter/supabase_flutter.dart' hide User;
+import '../../core/services/supabase_sync_service.dart';
 
 
 // ── Firebase Auth instance ─────────────────────────────────────────────────
@@ -103,73 +105,74 @@ class AuthNotifier extends AsyncNotifier<void> {
   }
 
   // ── Custom Email OTP Authentication flow ──────────────────────────────────
-  Future<String> sendEmailOtp({
+  Future<void> sendEmailOtp({
     required String email,
   }) async {
     state = const AsyncLoading();
     try {
       final cleanEmail = email.toLowerCase().trim();
 
-      // 1. Generate a random 6-digit verification code
-      final code = (100000 + Random().nextInt(900000)).toString();
-      final expiresAt = DateTime.now().add(const Duration(minutes: 10));
-
-      // 2. Save OTP locally to SharedPreferences (fast local verification)
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('pending_otp_code', code);
-      await prefs.setString('pending_otp_email', cleanEmail);
-      await prefs.setInt('pending_otp_expiry', expiresAt.millisecondsSinceEpoch);
-
-      // 3. Save OTP to Cloud Firestore 'otps' collection as cloud backup
+      // 1. Try Supabase Auth Email OTP
+      bool supabaseSent = false;
       try {
-        await FirebaseFirestore.instance.collection('otps').doc('${cleanEmail}_$code').set({
-          'email': cleanEmail,
-          'code': code,
-          'expires_at': expiresAt.toIso8601String(),
-          'created_at': DateTime.now().toIso8601String(),
-        });
+        await Supabase.instance.client.auth.signInWithOtp(
+          email: cleanEmail,
+        );
+        supabaseSent = true;
+        debugPrint('✅ [SUPABASE AUTH] Email OTP dispatched to $cleanEmail');
       } catch (e) {
-        debugPrint('⚠️ [FIRESTORE OTP WRITE WARNING] Could not write OTP to Firestore: $e');
+        debugPrint('⚠️ [SUPABASE AUTH OTP NOTICE]: $e');
       }
 
-      debugPrint('✉️ [EMAIL OTP] Generating OTP $code for $cleanEmail...');
+      // 2. Backup Email dispatch via Brevo REST API
+      if (!supabaseSent) {
+        final code = (100000 + Random().nextInt(900000)).toString();
+        final expiresAt = DateTime.now().add(const Duration(minutes: 10));
 
-      // 4. Send OTP email directly via Brevo REST API with both HTML and plain textContent
-      final response = await http.post(
-        Uri.parse('https://api.brevo.com/v3/smtp/email'),
-        headers: {
-          'api-key': AppSecrets.brevoApiKey,
-          'content-type': 'application/json',
-          'accept': 'application/json',
-        },
-        body: jsonEncode({
-          'sender': {'name': 'YourCA Finance', 'email': AppSecrets.brevoSenderEmail},
-          'to': [{'email': cleanEmail}],
-          'subject': '$code is your YourCA verification code',
-          'textContent': 'Your YourCA login verification code is: $code. This code is valid for 10 minutes.',
-          'htmlContent': '<div style="font-family:Arial,sans-serif;background:#0d0e15;padding:40px 20px;">'
-              '<div style="max-width:480px;margin:auto;background:#161824;border-radius:20px;padding:40px;border:1px solid #2d2f45;">'
-              '<h1 style="color:#6C5CE7;text-align:center;margin:0 0 8px 0;font-size:28px;">YourCA Finance</h1>'
-              '<p style="color:#a0a0b0;text-align:center;margin:0 0 32px 0;font-size:14px;">Personal Finance Planner</p>'
-              '<p style="color:#e0e0e0;font-size:16px;text-align:center;margin-bottom:24px;">Your 6-digit login verification code:</p>'
-              '<div style="background:#0d0e15;border-radius:16px;padding:28px;text-align:center;border:2px solid #6C5CE7;margin-bottom:24px;">'
-              '<span style="font-size:48px;font-weight:900;letter-spacing:14px;color:#6C5CE7;font-family:monospace;">$code</span>'
-              '</div>'
-              '<p style="color:#707080;font-size:13px;text-align:center;margin:0;">'
-              'This code expires in <strong style="color:#a0a0b0;">10 minutes</strong>.<br/>'
-              'If you did not request this, please ignore this email.</p>'
-              '</div></div>',
-        }),
-      );
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('pending_otp_code', code);
+        await prefs.setString('pending_otp_email', cleanEmail);
+        await prefs.setInt('pending_otp_expiry', expiresAt.millisecondsSinceEpoch);
 
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        debugPrint('✅ [BREVO] OTP email successfully requested! Status: ${response.statusCode}');
-      } else {
-        debugPrint('❌ [BREVO] Response error: ${response.statusCode} - ${response.body}');
+        try {
+          await FirebaseFirestore.instance.collection('otps').doc('${cleanEmail}_$code').set({
+            'email': cleanEmail,
+            'code': code,
+            'expires_at': expiresAt.toIso8601String(),
+            'created_at': DateTime.now().toIso8601String(),
+          });
+        } catch (_) {}
+
+        final response = await http.post(
+          Uri.parse('https://api.brevo.com/v3/smtp/email'),
+          headers: {
+            'api-key': AppSecrets.brevoApiKey,
+            'content-type': 'application/json',
+            'accept': 'application/json',
+          },
+          body: jsonEncode({
+            'sender': {'name': 'YourCA Finance', 'email': AppSecrets.brevoSenderEmail},
+            'to': [{'email': cleanEmail}],
+            'subject': '$code is your YourCA verification code',
+            'textContent': 'Your YourCA login verification code is: $code. Valid for 10 minutes.',
+            'htmlContent': '<div style="font-family:Arial,sans-serif;background:#0d0e15;padding:40px 20px;">'
+                '<div style="max-width:480px;margin:auto;background:#161824;border-radius:20px;padding:40px;border:1px solid #2d2f45;">'
+                '<h1 style="color:#6C5CE7;text-align:center;margin:0 0 8px 0;font-size:28px;">YourCA Finance</h1>'
+                '<p style="color:#a0a0b0;text-align:center;margin:0 0 32px 0;font-size:14px;">Personal Finance Planner</p>'
+                '<p style="color:#e0e0e0;font-size:16px;text-align:center;margin-bottom:24px;">Your 6-digit login verification code:</p>'
+                '<div style="background:#0d0e15;border-radius:16px;padding:28px;text-align:center;border:2px solid #6C5CE7;margin-bottom:24px;">'
+                '<span style="font-size:48px;font-weight:900;letter-spacing:14px;color:#6C5CE7;font-family:monospace;">$code</span>'
+                '</div>'
+                '<p style="color:#707080;font-size:13px;text-align:center;margin:0;">'
+                'This code expires in <strong style="color:#a0a0b0;">10 minutes</strong>.<br/>'
+                'If you did not request this, please ignore this email.</p>'
+                '</div></div>',
+          }),
+        );
+        debugPrint('✉️ Brevo fallback dispatch response: ${response.statusCode}');
       }
 
       state = const AsyncData(null);
-      return code;
     } catch (e, st) {
       state = AsyncError(e, st);
       rethrow;
@@ -186,22 +189,39 @@ class AuthNotifier extends AsyncNotifier<void> {
       final cleanOtp = otp.trim();
       final prefs = await SharedPreferences.getInstance();
 
-      // 1. Check local SharedPreferences OTP cache first (set when sendEmailOtp was called)
-      final localCode = prefs.getString('pending_otp_code');
-      final localEmail = prefs.getString('pending_otp_email');
-      final localExpiry = prefs.getInt('pending_otp_expiry') ?? 0;
+      bool isVerified = false;
 
-      bool isVerifiedLocally = false;
-      if (localEmail == cleanEmail && localCode == cleanOtp) {
-        if (DateTime.now().millisecondsSinceEpoch <= localExpiry) {
-          isVerifiedLocally = true;
-        } else {
-          throw Exception('Verification code has expired. Please request a new code.');
+      // 1. Try Supabase Auth verification
+      try {
+        final res = await Supabase.instance.client.auth.verifyOTP(
+          type: OtpType.email,
+          email: cleanEmail,
+          token: cleanOtp,
+        );
+        if (res.user != null) {
+          isVerified = true;
+          debugPrint('✅ [SUPABASE AUTH] OTP verified for $cleanEmail (UID: ${res.user!.id})');
+        }
+      } catch (e) {
+        debugPrint('⚠️ [SUPABASE VERIFY NOTICE]: $e');
+      }
+
+      // 2. Fallback check local SharedPreferences / Firestore OTP cache
+      if (!isVerified) {
+        final localCode = prefs.getString('pending_otp_code');
+        final localEmail = prefs.getString('pending_otp_email');
+        final localExpiry = prefs.getInt('pending_otp_expiry') ?? 0;
+
+        if (localEmail == cleanEmail && localCode == cleanOtp) {
+          if (DateTime.now().millisecondsSinceEpoch <= localExpiry) {
+            isVerified = true;
+          } else {
+            throw Exception('Verification code has expired. Please request a new code.');
+          }
         }
       }
 
-      // 2. If not verified locally, also check Firestore 'otps' collection as cloud backup
-      if (!isVerifiedLocally) {
+      if (!isVerified) {
         final docId = '${cleanEmail}_$cleanOtp';
         try {
           final doc = await FirebaseFirestore.instance
@@ -212,7 +232,7 @@ class AuthNotifier extends AsyncNotifier<void> {
           if (doc.exists && doc.data() != null) {
             final expiresAt = doc.data()?['expires_at'] as String? ?? '';
             if (expiresAt.isNotEmpty && DateTime.now().isBefore(DateTime.parse(expiresAt))) {
-              isVerifiedLocally = true;
+              isVerified = true;
             } else {
               throw Exception('Verification code has expired. Please request a new code.');
             }
@@ -222,7 +242,7 @@ class AuthNotifier extends AsyncNotifier<void> {
         }
       }
 
-      if (!isVerifiedLocally) {
+      if (!isVerified) {
         throw Exception('Invalid verification code. Please check the code and try again.');
       }
 
@@ -263,6 +283,13 @@ class AuthNotifier extends AsyncNotifier<void> {
         await ref.read(smsListenerProvider).syncInboxSms();
       } catch (e) {
         debugPrint('Error syncing inbox SMS: $e');
+      }
+
+      // 7.7. Restore full backup from Supabase PostgreSQL tables
+      try {
+        await SupabaseSyncService.instance.restoreFromCloud(stableUid);
+      } catch (e) {
+        debugPrint('Error restoring from Supabase: $e');
       }
 
       // 8. Restore profile and transactions from Firestore if available
@@ -462,6 +489,9 @@ class AuthNotifier extends AsyncNotifier<void> {
     }
 
     ref.read(stableUserIdProvider.notifier).state = null;
+    try {
+      await Supabase.instance.client.auth.signOut();
+    } catch (_) {}
     await _auth.signOut();
   }
 }
