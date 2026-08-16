@@ -1,7 +1,8 @@
 import 'dart:math';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
-import 'package:cloud_functions/cloud_functions.dart';
+import 'package:http/http.dart' as http;
+
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart' show debugPrint;
 import 'package:firebase_auth/firebase_auth.dart';
@@ -11,7 +12,9 @@ import '../../shared/models/models.dart';
 import '../../shared/repositories/user_repository.dart';
 import '../../shared/repositories/transaction_repository.dart';
 import '../../core/services/activity_logger.dart';
+import '../../core/config/secrets.dart';
 import '../sms/sms_listener_service.dart';
+
 
 // ── Firebase Auth instance ─────────────────────────────────────────────────
 final firebaseAuthProvider = Provider<FirebaseAuth>((ref) {
@@ -114,29 +117,39 @@ class AuthNotifier extends AsyncNotifier<void> {
       await prefs.setString('pending_otp_email', cleanEmail);
       await prefs.setInt('pending_otp_expiry', DateTime.now().add(const Duration(minutes: 10)).millisecondsSinceEpoch);
 
-      debugPrint('✉️ [EMAIL OTP] Sending real OTP $code to $cleanEmail via Cloud Function...');
+      debugPrint('✉️ [EMAIL OTP] Sending real OTP $code to $cleanEmail via Brevo...');
 
-      // 3. Call the Firebase Cloud Function to send real OTP email via Brevo SMTP
-      try {
-        final callable = FirebaseFunctions.instance.httpsCallable('sendOtpEmail');
-        final result = await callable.call({
-          'email': cleanEmail,
-          'code': code,
-        });
-        debugPrint('✉️ [CLOUD FUNCTION] Email sent! Result: ${result.data}');
-      } catch (e) {
-        debugPrint('❌ [CLOUD FUNCTION ERROR] Could not send OTP email: $e');
-        // Still save to Firestore as backup so user can verify if email arrives later
-        try {
-          final docId = '${cleanEmail}_$code';
-          await FirebaseFirestore.instance.collection('otps').doc(docId).set({
-            'expires_at': DateTime.now().add(const Duration(minutes: 10)).toIso8601String(),
-            'email': cleanEmail,
-            'created_at': DateTime.now().toIso8601String(),
-          });
-        } catch (_) {}
-        // Rethrow so user sees the error
-        rethrow;
+      // 3. Send OTP email directly via Brevo REST API
+      final response = await http.post(
+        Uri.parse('https://api.brevo.com/v3/smtp/email'),
+        headers: {
+          'api-key': AppSecrets.brevoApiKey,
+          'content-type': 'application/json',
+        },
+        body: jsonEncode({
+          'sender': {'name': 'YourCA Finance', 'email': AppSecrets.brevoSenderEmail},
+          'to': [{'email': cleanEmail}],
+          'subject': '$code - Your YourCA verification code',
+          'htmlContent': '<div style="font-family:Arial,sans-serif;background:#0d0e15;padding:40px 20px;">'
+              '<div style="max-width:480px;margin:auto;background:#161824;border-radius:20px;padding:40px;border:1px solid #2d2f45;">'
+              '<h1 style="color:#6C5CE7;text-align:center;margin:0 0 8px 0;font-size:28px;">YourCA Finance</h1>'
+              '<p style="color:#a0a0b0;text-align:center;margin:0 0 32px 0;font-size:14px;">Personal Finance Planner</p>'
+              '<p style="color:#e0e0e0;font-size:16px;text-align:center;margin-bottom:24px;">Your 6-digit login verification code:</p>'
+              '<div style="background:#0d0e15;border-radius:16px;padding:28px;text-align:center;border:2px solid #6C5CE7;margin-bottom:24px;">'
+              '<span style="font-size:48px;font-weight:900;letter-spacing:14px;color:#6C5CE7;font-family:monospace;">$code</span>'
+              '</div>'
+              '<p style="color:#707080;font-size:13px;text-align:center;margin:0;">'
+              'This code expires in <strong style="color:#a0a0b0;">10 minutes</strong>.<br/>'
+              'If you did not request this, please ignore this email.</p>'
+              '</div></div>',
+        }),
+      );
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        debugPrint('✅ [BREVO] OTP email sent! Status: ${response.statusCode}');
+      } else {
+        debugPrint('❌ [BREVO] Failed: ${response.statusCode} - ${response.body}');
+        throw Exception('Failed to send OTP email. Please check your connection and try again.');
       }
 
       state = const AsyncData(null);

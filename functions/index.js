@@ -1,27 +1,72 @@
 const functions = require('firebase-functions/v2');
 const admin = require('firebase-admin');
-const nodemailer = require('nodemailer');
+const https = require('https');
 
 admin.initializeApp();
 const db = admin.firestore();
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Brevo SMTP Configuration
-// Replace BREVO_API_KEY_HERE with your actual Brevo API key (xkeysib-...)
-// The API key is used as the SMTP password for Brevo's SMTP server
+// Brevo REST API Configuration
 // ──────────────────────────────────────────────────────────────────────────────
-const BREVO_API_KEY = 'BREVO_API_KEY_HERE';
-const SENDER_EMAIL = 'aryan555612@gmail.com'; // Your verified sender email in Brevo
+const BREVO_API_KEY = process.env.BREVO_API_KEY || 'YOUR_BREVO_API_KEY_HERE';
 
-const transporter = nodemailer.createTransport({
-  host: 'smtp-relay.brevo.com',
-  port: 587,
-  secure: false,
-  auth: {
-    user: SENDER_EMAIL,
-    pass: BREVO_API_KEY,
-  },
-});
+const SENDER_EMAIL = 'aryan555612@gmail.com';
+const SENDER_NAME = 'YourCA Finance';
+
+function sendBrevoEmail(toEmail, code) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({
+      sender: { name: SENDER_NAME, email: SENDER_EMAIL },
+      to: [{ email: toEmail }],
+      subject: `${code} - Your YourCA verification code`,
+      htmlContent: `
+        <div style="font-family: Arial, sans-serif; background: #0d0e15; padding: 40px 20px;">
+          <div style="max-width: 480px; margin: auto; background: #161824; border-radius: 20px; padding: 40px; border: 1px solid #2d2f45;">
+            <h1 style="color: #6C5CE7; text-align: center; margin: 0 0 8px 0; font-size: 28px;">YourCA Finance</h1>
+            <p style="color: #a0a0b0; text-align: center; margin: 0 0 32px 0; font-size: 14px;">Personal Finance Planner</p>
+            <p style="color: #e0e0e0; font-size: 16px; text-align: center; margin-bottom: 24px;">
+              Your 6-digit login verification code:
+            </p>
+            <div style="background: #0d0e15; border-radius: 16px; padding: 28px; text-align: center; border: 2px solid #6C5CE7; margin-bottom: 24px;">
+              <span style="font-size: 48px; font-weight: 900; letter-spacing: 14px; color: #6C5CE7; font-family: monospace;">${code}</span>
+            </div>
+            <p style="color: #707080; font-size: 13px; text-align: center; margin: 0;">
+              This code expires in <strong style="color: #a0a0b0;">10 minutes</strong>.<br/>
+              If you did not request this, ignore this email.
+            </p>
+          </div>
+        </div>
+      `
+    });
+
+    const req = https.request({
+      hostname: 'api.brevo.com',
+      port: 443,
+      path: '/v3/smtp/email',
+      method: 'POST',
+      headers: {
+        'api-key': BREVO_API_KEY,
+        'content-type': 'application/json',
+        'content-length': Buffer.byteLength(body),
+      }
+    }, (res) => {
+      let responseBody = '';
+      res.on('data', (chunk) => responseBody += chunk);
+      res.on('end', () => {
+        console.log(`Brevo API response: ${res.statusCode} - ${responseBody}`);
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          resolve(JSON.parse(responseBody));
+        } else {
+          reject(new Error(`Brevo API error ${res.statusCode}: ${responseBody}`));
+        }
+      });
+    });
+
+    req.on('error', (e) => reject(e));
+    req.write(body);
+    req.end();
+  });
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Cloud Function: sendOtpEmail
@@ -52,38 +97,15 @@ exports.sendOtpEmail = functions.https.onCall(
       console.warn('Could not save OTP to Firestore:', err.message);
     }
 
-    // Send the real OTP email via Brevo SMTP
-    const mailOptions = {
-      from: `"YourCA Finance" <${SENDER_EMAIL}>`,
-      to: cleanEmail,
-      subject: `${code} is your YourCA verification code`,
-      html: `
-        <div style="font-family: Arial, sans-serif; background: #0d0e15; padding: 40px 20px;">
-          <div style="max-width: 480px; margin: auto; background: #161824; border-radius: 20px; padding: 40px; border: 1px solid #2d2f45;">
-            <h1 style="color: #6C5CE7; text-align: center; margin: 0 0 8px 0; font-size: 28px;">YourCA Finance</h1>
-            <p style="color: #a0a0b0; text-align: center; margin: 0 0 32px 0; font-size: 14px;">Personal Finance Planner</p>
-            <p style="color: #e0e0e0; font-size: 16px; text-align: center; margin-bottom: 24px;">
-              Use the following 6-digit code to sign in to your account:
-            </p>
-            <div style="background: #0d0e15; border-radius: 16px; padding: 28px; text-align: center; border: 2px solid #6C5CE7; margin-bottom: 24px;">
-              <span style="font-size: 42px; font-weight: 900; letter-spacing: 12px; color: #6C5CE7; font-family: monospace;">${code}</span>
-            </div>
-            <p style="color: #707080; font-size: 13px; text-align: center; margin: 0;">
-              This code expires in <strong style="color: #a0a0b0;">10 minutes</strong>.<br/>
-              If you did not request this code, please ignore this email.
-            </p>
-          </div>
-        </div>
-      `,
-    };
-
+    // Send the real OTP email via Brevo REST API
     try {
-      const info = await transporter.sendMail(mailOptions);
-      console.log(`OTP email sent to ${cleanEmail}, messageId: ${info.messageId}`);
-      return { success: true, messageId: info.messageId };
+      const result = await sendBrevoEmail(cleanEmail, code);
+      console.log(`OTP email sent to ${cleanEmail}:`, result);
+      return { success: true };
     } catch (err) {
       console.error('Failed to send OTP email:', err);
       throw new functions.https.HttpsError('internal', `Email delivery failed: ${err.message}`);
+
     }
   }
 );
