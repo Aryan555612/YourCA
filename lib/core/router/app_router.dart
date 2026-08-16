@@ -37,16 +37,14 @@ class _ActivityRouteObserver extends NavigatorObserver {
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
-  final authState = ref.watch(authStateProvider);
+  final stableUserId = ref.watch(stableUserIdProvider);
 
   return GoRouter(
     initialLocation: '/',
     debugLogDiagnostics: false,
     observers: [_ActivityRouteObserver()],
     redirect: (context, state) {
-      if (authState.isLoading) return null; // Wait for loading to finish to prevent flickering
-
-      final isAuthenticated = authState.valueOrNull != null;
+      final isAuthenticated = stableUserId != null && stableUserId.isNotEmpty;
       final isAuthRoute = state.matchedLocation.startsWith('/auth');
 
       if (!isAuthenticated && !isAuthRoute && state.matchedLocation != '/') {

@@ -104,25 +104,16 @@ class AuthNotifier extends AsyncNotifier<void> {
     try {
       final cleanEmail = email.toLowerCase().trim();
 
-      // 1. Authenticate anonymously first if not already signed in
-      try {
-        if (_auth.currentUser == null) {
-          await _auth.signInAnonymously();
-        }
-      } catch (e) {
-        debugPrint('Note: Anonymous sign-in before OTP send skipped or error: $e');
-      }
-
-      // 2. Generate a random 6-digit verification code
+      // 1. Generate a random 6-digit verification code
       final code = (100000 + Random().nextInt(900000)).toString();
 
-      // 3. Save OTP locally to SharedPreferences so verification NEVER fails even offline or if cloud rules block write
+      // 2. Save OTP locally to SharedPreferences so verification NEVER fails even offline or if cloud rules block write
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('pending_otp_code', code);
       await prefs.setString('pending_otp_email', cleanEmail);
       await prefs.setInt('pending_otp_expiry', DateTime.now().add(const Duration(minutes: 10)).millisecondsSinceEpoch);
 
-      // 4. Also attempt to save to Firestore under 'otps' collection (optional cloud backup)
+      // 3. Also attempt to save to Firestore under 'otps' collection (optional cloud backup)
       try {
         final docId = '${cleanEmail}_$code';
         await FirebaseFirestore.instance.collection('otps').doc(docId).set({
@@ -134,10 +125,10 @@ class AuthNotifier extends AsyncNotifier<void> {
         debugPrint('Note: Could not save OTP to cloud Firestore (using local OTP verification): $e');
       }
 
-      // 5. Print code to terminal debug logs so developer/tester can copy it immediately
+      // 4. Print code to terminal debug logs so developer/tester can copy it immediately
       debugPrint('✉️ [EMAIL OTP] Verification code for $cleanEmail is: $code');
 
-      // 6. Try to send it via real email using Brevo SMTP API (if configured in Firestore)
+      // 5. Try to send it via real email using Brevo SMTP API (if configured in Firestore)
       try {
         final configDoc = await FirebaseFirestore.instance.collection('config').doc('brevo').get();
         final brevoApiKey = configDoc.exists ? (configDoc.data()?['apiKey'] as String? ?? '') : '';
@@ -288,7 +279,7 @@ class AuthNotifier extends AsyncNotifier<void> {
         }
       }
 
-      // Restore transactions from Firestore
+      // Restore ALL transactions from Firestore without any date filter
       try {
         final txsSnap = await FirebaseFirestore.instance
             .collection('users')
@@ -299,11 +290,7 @@ class AuthNotifier extends AsyncNotifier<void> {
           final List<Transaction> transactions = [];
           for (final doc in txsSnap.docs) {
             final tx = Transaction.fromFirestore(doc.data(), doc.id);
-            if (tx.date.isBefore(DateTime(2026, 7, 12))) {
-              doc.reference.delete();
-            } else {
-              transactions.add(tx);
-            }
+            transactions.add(tx);
           }
           
           if (transactions.isNotEmpty) {
