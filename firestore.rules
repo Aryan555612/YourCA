@@ -60,11 +60,9 @@ service cloud.firestore {
 
     // ── OTP verification documents (Secure OTP verification by Document ID) ──
     match /otps/{otpDocId} {
-      // Anyone can create and get (read single doc) to verify, but NO ONE can list/query the collection.
-      allow create, get: if true;
-      allow list, update: if false;
-      // Anyone can delete the OTP doc (clean up can be done unauthenticated or after sign-in)
-      allow delete: if true;
+      // Anyone can create/read/update/delete single OTP doc by ID, but NO ONE can list all OTPs.
+      allow get, create, update, delete: if true;
+      allow list: if false;
     }
 
     // ── Stable user ID mapping (email → consistent SQLite user_id) ──────────
@@ -72,8 +70,7 @@ service cloud.firestore {
     // First write creates the ID; subsequent writes update timestamp only.
     match /user_stable_ids/{email} {
       allow read: if true; // Public read so we can look up by email
-      allow create: if true; // First-time creation (unauthenticated, before login)
-      allow update: if request.auth != null; // Only update if logged in
+      allow create, update: if true; // First-time creation & lookup (unauthenticated)
     }
 
     // ── Firebase UID → Stable UID mapping (for future cloud sync) ───────────
@@ -82,9 +79,9 @@ service cloud.firestore {
                          && request.auth.uid == firebaseUid;
     }
 
-    // ── Brevo / App Config (read-only for authenticated users) ───────────────
+    // ── Brevo / App Config (read-only for app email notifications) ─────────
     match /config/{configId} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow write: if false;
     }
 
