@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
@@ -118,7 +119,7 @@ class _BalanceCheckScreenState extends ConsumerState<BalanceCheckScreen>
   }
 
   Future<void> _loadBalance() async {
-    if (!Platform.isAndroid) {
+    if (kIsWeb || !Platform.isAndroid) {
       ref.read(balanceErrorProvider.notifier).state =
           'SMS balance reading is only available on Android.';
       return;

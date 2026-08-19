@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -250,7 +251,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    if (Platform.isAndroid) {
+    if (!kIsWeb && Platform.isAndroid) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _setupSms());
     }
   }
@@ -388,7 +389,7 @@ class _DashboardContent extends ConsumerWidget {
                       error: (_, __) => const SizedBox.shrink(),
                     ),
                     // Check Balance quick action
-                    if (Platform.isAndroid)
+                    if (!kIsWeb && Platform.isAndroid)
                       IconButton(
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),

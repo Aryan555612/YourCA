@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:another_telephony/telephony.dart';
 import 'package:uuid/uuid.dart';
@@ -70,7 +71,7 @@ class SmsListenerService {
 
   /// Start listening for incoming SMS on Android.
   void start() {
-    if (!Platform.isAndroid) return;
+    if (kIsWeb || !Platform.isAndroid) return;
     if (_isListening) return;
     _isListening = true;
 
@@ -101,7 +102,7 @@ class SmsListenerService {
   /// and imports missing transactions.
   Future<void> syncInboxSms() async {
     try {
-      if (!Platform.isAndroid) return;
+      if (kIsWeb || !Platform.isAndroid) return;
       final userId = _ref.read(currentUserIdProvider);
       if (userId == null) return;
 

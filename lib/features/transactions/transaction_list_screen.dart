@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -655,7 +656,7 @@ class _ExportDialogState extends ConsumerState<_ExportDialog> {
       }
 
       Directory? directory;
-      if (Platform.isAndroid) {
+      if (!kIsWeb && Platform.isAndroid) {
         directory = await getDownloadsDirectory();
       }
       directory ??= await getApplicationDocumentsDirectory();
