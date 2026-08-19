@@ -10,7 +10,7 @@ const db = admin.firestore();
 // ──────────────────────────────────────────────────────────────────────────────
 const BREVO_API_KEY = process.env.BREVO_API_KEY || 'YOUR_BREVO_API_KEY_HERE';
 
-const SENDER_EMAIL = 'aryan555612@gmail.com';
+const SENDER_EMAIL = 'aryanpatel9051@gmail.com';
 const SENDER_NAME = 'YourCA Finance';
 
 function sendBrevoEmail(toEmail, code) {

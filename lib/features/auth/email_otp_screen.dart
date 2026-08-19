@@ -1,8 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../shared/widgets/gradient_button.dart';
@@ -25,6 +25,8 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
   bool _codeSent = false;
+  int _resendSeconds = 30;
+  Timer? _resendTimer;
   
   late AnimationController _shakeController;
   late Animation<double> _shakeAnimation;
@@ -41,6 +43,7 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
 
   @override
   void dispose() {
+    _resendTimer?.cancel();
     _emailController.dispose();
     for (final c in _controllers) c.dispose();
     for (final f in _focusNodes) f.dispose();
@@ -48,15 +51,52 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
     super.dispose();
   }
 
+  void _startResendTimer() {
+    _resendTimer?.cancel();
+    setState(() => _resendSeconds = 30);
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      if (_resendSeconds > 0) {
+        setState(() => _resendSeconds--);
+      } else {
+        timer.cancel();
+      }
+    });
+  }
+
   String get _otp => _controllers.map((c) => c.text).join();
 
   void _onOtpDigitChanged(int index, String value) {
-    if (value.isNotEmpty && index < 5) {
-      _focusNodes[index + 1].requestFocus();
+    final cleanDigits = value.replaceAll(RegExp(r'\D'), '');
+
+    // Handle smart pasting of multi-digit OTPs (e.g. 6-digit code copied from email)
+    if (cleanDigits.length > 1) {
+      final digits = cleanDigits.split('');
+      for (int i = 0; i < 6; i++) {
+        if (i < digits.length) {
+          _controllers[i].text = digits[i];
+        } else {
+          _controllers[i].clear();
+        }
+      }
+      if (digits.length >= 6) {
+        _focusNodes[5].requestFocus();
+        _verifyOtp();
+      } else {
+        _focusNodes[digits.length < 6 ? digits.length : 5].requestFocus();
+      }
+      return;
     }
-    if (value.isEmpty && index > 0) {
+
+    if (value.isNotEmpty) {
+      _controllers[index].text = cleanDigits.isNotEmpty ? cleanDigits[0] : value;
+      if (index < 5) {
+        _focusNodes[index + 1].requestFocus();
+      }
+    } else if (index > 0) {
       _focusNodes[index - 1].requestFocus();
     }
+
     if (_otp.length == 6) {
       _verifyOtp();
     }
@@ -76,6 +116,7 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
           _isLoading = false;
           _codeSent = true;
         });
+        _startResendTimer();
         _showSnackBar(
           'Verification code sent to $email! Please check your email inbox.',
           AppColors.credit,
@@ -226,19 +267,38 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
                           ),
                         ),
                         const SizedBox(height: 12),
-                        Center(
-                          child: TextButton(
-                            onPressed: _isLoading ? null : () {
-                              setState(() {
-                                _codeSent = false;
-                                for (final c in _controllers) c.clear();
-                              });
-                            },
-                            child: Text(
-                              'Resend OTP / Change Email',
-                              style: AppTextStyles.bodyMedium.copyWith(color: AppColors.primary),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            TextButton(
+                              onPressed: (_isLoading || _resendSeconds > 0) ? null : _sendOtp,
+                              child: Text(
+                                _resendSeconds > 0
+                                    ? 'Resend in ${_resendSeconds}s'
+                                    : 'Resend OTP Code',
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  color: _resendSeconds > 0
+                                      ? AppColors.textTertiary
+                                      : AppColors.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             ),
-                          ),
+                            TextButton(
+                              onPressed: _isLoading
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        _codeSent = false;
+                                        for (final c in _controllers) c.clear();
+                                      });
+                                    },
+                              child: Text(
+                                'Change Email',
+                                style: AppTextStyles.bodyMedium.copyWith(color: AppColors.primary),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ],
@@ -254,7 +314,6 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
       ),
     );
   }
-
 
   Widget _buildBrandHeader() {
     return Row(
@@ -288,7 +347,7 @@ class _EmailOtpScreenState extends ConsumerState<EmailOtpScreen>
         textAlign: TextAlign.center,
         style: AppTextStyles.headlineLarge.copyWith(fontWeight: FontWeight.bold),
         inputFormatters: [
-          LengthLimitingTextInputFormatter(1),
+          LengthLimitingTextInputFormatter(6),
           FilteringTextInputFormatter.digitsOnly,
         ],
         onChanged: (v) => _onOtpDigitChanged(index, v),

@@ -58,13 +58,31 @@ final currentUserIdProvider = Provider<String?>((ref) {
 
 // ── Auth notifier ──────────────────────────────────────────────────────────
 class AuthNotifier extends AsyncNotifier<void> {
-  late FirebaseAuth _auth;
-  late UserRepository _userRepo;
+  FirebaseAuth? _authInstance;
+  UserRepository? _userRepoInstance;
+
+  FirebaseAuth get _auth {
+    if (_authInstance != null) return _authInstance!;
+    try {
+      return ref.read(firebaseAuthProvider);
+    } catch (_) {
+      return FirebaseAuth.instance;
+    }
+  }
+
+  UserRepository get _userRepo {
+    if (_userRepoInstance != null) return _userRepoInstance!;
+    return ref.read(userRepositoryProvider);
+  }
 
   @override
   Future<void> build() async {
-    _auth = ref.watch(firebaseAuthProvider);
-    _userRepo = ref.watch(userRepositoryProvider);
+    try {
+      _authInstance = ref.watch(firebaseAuthProvider);
+    } catch (_) {}
+    try {
+      _userRepoInstance = ref.watch(userRepositoryProvider);
+    } catch (_) {}
   }
 
   // ── Generate deterministic stable UID from email ───────────────────────
@@ -79,27 +97,26 @@ class AuthNotifier extends AsyncNotifier<void> {
 
   // ── Get or create stable UID in Firestore ──────────────────────────────
   Future<String> _getOrCreateStableUid(String email) async {
-    final docRef = FirebaseFirestore.instance
-        .collection('user_stable_ids')
-        .doc(email.toLowerCase().trim());
+    final cleanEmail = email.toLowerCase().trim();
+    final stableUid = _generateStableId(cleanEmail);
 
     try {
+      final docRef = FirebaseFirestore.instance
+          .collection('user_stable_ids')
+          .doc(cleanEmail);
+
       final doc = await docRef.get();
       if (doc.exists && doc.data()?['stable_uid'] != null) {
         return doc.data()!['stable_uid'] as String;
       }
-    } catch (_) {}
 
-    // Not in Firestore yet — generate and store
-    final stableUid = _generateStableId(email);
-    try {
       await docRef.set({
         'stable_uid': stableUid,
-        'email': email.toLowerCase().trim(),
+        'email': cleanEmail,
         'created_at': DateTime.now().toIso8601String(),
       });
     } catch (_) {
-      // Firestore write failed (offline?) — still use the generated ID locally
+      // Firestore uninitialized or offline — fall back to locally generated stable ID
     }
     return stableUid;
   }
@@ -107,10 +124,24 @@ class AuthNotifier extends AsyncNotifier<void> {
   // ── Custom Email OTP Authentication flow ──────────────────────────────────
   Future<void> sendEmailOtp({
     required String email,
+    http.Client? httpClient,
   }) async {
     state = const AsyncLoading();
     try {
       final cleanEmail = email.toLowerCase().trim();
+
+      if (cleanEmail.isEmpty || !cleanEmail.contains('@')) {
+        throw Exception('Please enter a valid email address.');
+      }
+
+      // Pre-authenticate anonymously if needed for Firebase services
+      try {
+        if (_auth.currentUser == null) {
+          await _auth.signInAnonymously();
+        }
+      } catch (e) {
+        debugPrint('Note: Pre-auth anonymous sign-in skipped: $e');
+      }
 
       // 1. Generate a 6-digit verification code
       final code = (100000 + Random().nextInt(900000)).toString();
@@ -146,7 +177,8 @@ class AuthNotifier extends AsyncNotifier<void> {
 
       // 5. Direct high-speed REST Email Dispatch via Brevo API
       debugPrint('✉️ [BREVO OTP DISPATCH] Sending OTP $code to $cleanEmail...');
-      final response = await http.post(
+      final client = httpClient ?? http.Client();
+      final response = await client.post(
         Uri.parse('https://api.brevo.com/v3/smtp/email'),
         headers: {
           'api-key': AppSecrets.brevoApiKey,
@@ -154,37 +186,36 @@ class AuthNotifier extends AsyncNotifier<void> {
           'accept': 'application/json',
         },
         body: jsonEncode({
-          'sender': {'name': 'YourCA Finance', 'email': AppSecrets.brevoSenderEmail},
+          'sender': {'name': 'YourCA', 'email': AppSecrets.brevoSenderEmail},
           'to': [{'email': cleanEmail}],
-          'subject': '$code is your YourCA verification code',
-          'textContent': 'Your YourCA login verification code is: $code. This code is valid for 10 minutes. If you did not request this, please ignore.',
+          'subject': 'YourCA OTP Verification Code',
+          'textContent': 'Use the following verification code to sign in to your finance tracking account: $code. This code will expire in 10 minutes. If you did not request this code, you can safely ignore this email.',
           'htmlContent': '''
 <!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"/></head>
-<body style="font-family: Arial, sans-serif; background-color: #0d0e15; margin: 0; padding: 20px; color: #ffffff;">
-  <div style="max-width: 480px; margin: 0 auto; background-color: #161824; border-radius: 16px; padding: 32px; border: 1px solid #2d2f45;">
-    <h1 style="color: #6C5CE7; text-align: center; margin: 0 0 8px 0; font-size: 26px;">YourCA Finance</h1>
-    <p style="color: #a0a0b0; text-align: center; margin: 0 0 24px 0; font-size: 14px;">Personal Finance Planner</p>
-    <p style="color: #e0e0e0; font-size: 15px; text-align: center; margin-bottom: 20px;">Your 6-digit login verification code is:</p>
-    <div style="background: #0d0e15; border-radius: 12px; padding: 20px; text-align: center; border: 2px solid #6C5CE7; margin-bottom: 24px;">
-      <span style="font-size: 40px; font-weight: bold; letter-spacing: 10px; color: #6C5CE7; font-family: monospace;">$code</span>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0d0e15; margin: 0; padding: 32px 16px; color: #ffffff;">
+  <div style="max-width: 460px; margin: 0 auto; background-color: #161824; border-radius: 20px; padding: 36px 32px; border: 1px solid #2d2f45; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+    <h2 style="color: #6C5CE7; text-align: left; margin: 0 0 16px 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">YourCA</h2>
+    <p style="color: #a0a0b0; font-size: 15px; text-align: left; margin: 0 0 28px 0; line-height: 1.5;">Use the following verification code to sign in to your finance tracking account:</p>
+    <div style="background-color: #0d0e15; border-radius: 14px; padding: 24px 16px; text-align: center; border: 1px solid #2d2f45; margin-bottom: 28px;">
+      <span style="font-size: 42px; font-weight: 900; letter-spacing: 12px; color: #ffffff; font-family: monospace;">$code</span>
     </div>
-    <p style="color: #707080; font-size: 13px; text-align: center; margin: 0;">
-      This code is valid for <strong>10 minutes</strong>.<br/>
-      If you did not request this code, please ignore this email.
+    <p style="color: #707080; font-size: 13px; text-align: left; margin: 0; line-height: 1.5;">
+      This code will expire in 10 minutes. If you did not request this code, you can safely ignore this email.
     </p>
   </div>
 </body>
 </html>
 ''',
         }),
-      ).timeout(const Duration(seconds: 10));
+      ).timeout(const Duration(seconds: 12));
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         debugPrint('✅ [BREVO REST API] OTP Email successfully sent to $cleanEmail (Status ${response.statusCode})');
       } else {
-        debugPrint('⚠️ [BREVO REST API WARNING] Response status ${response.statusCode}: ${response.body}');
+        debugPrint('❌ [BREVO REST API ERROR] Status ${response.statusCode}: ${response.body}');
+        throw Exception('Failed to send verification email (Status ${response.statusCode}). Please check your email address.');
       }
 
       state = const AsyncData(null);
@@ -206,29 +237,31 @@ class AuthNotifier extends AsyncNotifier<void> {
 
       bool isVerified = false;
 
-      // 1. Try Supabase Auth verification
-      try {
-        final res = await Supabase.instance.client.auth.verifyOTP(
-          type: OtpType.email,
-          email: cleanEmail,
-          token: cleanOtp,
-        );
-        if (res.user != null) {
-          isVerified = true;
-          debugPrint('✅ [SUPABASE AUTH] OTP verified for $cleanEmail (UID: ${res.user!.id})');
+      // 1. Try Supabase Auth verification if configured
+      if (!isVerified && !AppSecrets.supabaseUrl.contains('your-project.supabase.co')) {
+        try {
+          final res = await Supabase.instance.client.auth.verifyOTP(
+            type: OtpType.email,
+            email: cleanEmail,
+            token: cleanOtp,
+          );
+          if (res.user != null) {
+            isVerified = true;
+            debugPrint('✅ [SUPABASE AUTH] OTP verified for $cleanEmail (UID: ${res.user!.id})');
+          }
+        } catch (e) {
+          debugPrint('⚠️ [SUPABASE VERIFY NOTICE]: $e');
         }
-      } catch (e) {
-        debugPrint('⚠️ [SUPABASE VERIFY NOTICE]: $e');
       }
 
-      // 2. Fallback check local SharedPreferences / Firestore OTP cache
+      // 2. Check local SharedPreferences OTP cache
       if (!isVerified) {
         final localCode = prefs.getString('pending_otp_code');
         final localEmail = prefs.getString('pending_otp_email');
         final localExpiry = prefs.getInt('pending_otp_expiry') ?? 0;
 
         if (localEmail == cleanEmail && localCode == cleanOtp) {
-          if (DateTime.now().millisecondsSinceEpoch <= localExpiry) {
+          if (localExpiry == 0 || DateTime.now().millisecondsSinceEpoch <= localExpiry) {
             isVerified = true;
           } else {
             throw Exception('Verification code has expired. Please request a new code.');
@@ -236,6 +269,7 @@ class AuthNotifier extends AsyncNotifier<void> {
         }
       }
 
+      // 3. Check Cloud Firestore 'otps' collection
       if (!isVerified) {
         final docId = '${cleanEmail}_$cleanOtp';
         try {
@@ -246,7 +280,7 @@ class AuthNotifier extends AsyncNotifier<void> {
 
           if (doc.exists && doc.data() != null) {
             final expiresAt = doc.data()?['expires_at'] as String? ?? '';
-            if (expiresAt.isNotEmpty && DateTime.now().isBefore(DateTime.parse(expiresAt))) {
+            if (expiresAt.isEmpty || DateTime.now().isBefore(DateTime.parse(expiresAt))) {
               isVerified = true;
             } else {
               throw Exception('Verification code has expired. Please request a new code.');
@@ -321,21 +355,25 @@ class AuthNotifier extends AsyncNotifier<void> {
         debugPrint('Error fetching user profile from Firestore: $e');
       }
 
-      if (cloudProfile != null) {
-        await _userRepo.createProfile(cloudProfile, syncToCloud: false);
-      } else {
-        final existingProfile = await _userRepo.fetchProfile(stableUid);
-        if (existingProfile == null) {
-          await _userRepo.createProfile(
-            UserProfile(
-              id: stableUid,
-              name: cleanEmail.split('@').first,
-              phoneNumber: cleanEmail,
-              createdAt: DateTime.now(),
-            ),
-            syncToCloud: true,
-          );
+      try {
+        if (cloudProfile != null) {
+          await _userRepo.createProfile(cloudProfile, syncToCloud: false);
+        } else {
+          final existingProfile = await _userRepo.fetchProfile(stableUid);
+          if (existingProfile == null) {
+            await _userRepo.createProfile(
+              UserProfile(
+                id: stableUid,
+                name: cleanEmail.split('@').first,
+                phoneNumber: cleanEmail,
+                createdAt: DateTime.now(),
+              ),
+              syncToCloud: true,
+            );
+          }
         }
+      } catch (e) {
+        debugPrint('Note: Profile local storage sync skipped: $e');
       }
 
       // Restore ALL transactions from Firestore without any date filter
@@ -426,7 +464,10 @@ class AuthNotifier extends AsyncNotifier<void> {
       }
 
       // 9. Store mapping in Firestore linking Firebase UID → stable UID
-      final fbUser = credential?.user ?? _auth.currentUser;
+      User? fbUser = credential?.user;
+      try {
+        fbUser ??= _auth.currentUser;
+      } catch (_) {}
       if (fbUser != null) {
         try {
           await FirebaseFirestore.instance
@@ -507,7 +548,11 @@ class AuthNotifier extends AsyncNotifier<void> {
     try {
       await Supabase.instance.client.auth.signOut();
     } catch (_) {}
-    await _auth.signOut();
+    try {
+      await _auth.signOut();
+    } catch (e) {
+      debugPrint('Note: Firebase signOut skipped or error: $e');
+    }
   }
 }
 

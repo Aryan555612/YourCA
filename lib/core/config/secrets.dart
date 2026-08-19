@@ -15,7 +15,7 @@ class AppSecrets {
   );
 
   /// Verified sender email address in your Brevo account.
-  static const String brevoSenderEmail = 'aryan555612@gmail.com';
+  static const String brevoSenderEmail = 'aryanpatel9051@gmail.com';
 
   /// Supabase Project URL.
   static const String supabaseUrl = String.fromEnvironment(
