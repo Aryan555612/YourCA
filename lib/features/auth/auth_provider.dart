@@ -537,13 +537,6 @@ class AuthNotifier extends AsyncNotifier<void> {
       await prefs.remove(_stableEmailPrefKey);
     } catch (_) {}
 
-    // Purge local SQLite database to prevent any data leak between accounts
-    try {
-      await DatabaseHelper.instance.clearAllData();
-    } catch (e) {
-      debugPrint('Error clearing local SQLite data on sign-out: $e');
-    }
-
     ref.read(stableUserIdProvider.notifier).state = null;
     try {
       await Supabase.instance.client.auth.signOut();
